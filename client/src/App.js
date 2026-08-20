@@ -140,7 +140,7 @@ export default function App() {
       />
       <Route
         path="/register"
-        element={token ? <Navigate to="/" replace /> : <Register onLogin={setUser} />}
+        element={<Register onLogin={setUser} />}
       />
       <Route
         path="/*"

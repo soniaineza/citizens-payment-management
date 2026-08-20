@@ -29,11 +29,33 @@ async function init() {
         name TEXT NOT NULL,
         id_number TEXT UNIQUE NOT NULL,
         phone TEXT,
+        gender TEXT,
+        spouse_name TEXT,
+        spouse_id TEXT,
+        num_other_persons INTEGER,
+        district TEXT,
+        sector TEXT,
+        cell TEXT,
+        village TEXT,
+        ics_serial TEXT,
+        registration_date DATE,
         address TEXT,
         place TEXT,
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      ALTER TABLE citizens
+        ADD COLUMN IF NOT EXISTS gender TEXT,
+        ADD COLUMN IF NOT EXISTS spouse_name TEXT,
+        ADD COLUMN IF NOT EXISTS spouse_id TEXT,
+        ADD COLUMN IF NOT EXISTS num_other_persons INTEGER,
+        ADD COLUMN IF NOT EXISTS district TEXT,
+        ADD COLUMN IF NOT EXISTS sector TEXT,
+        ADD COLUMN IF NOT EXISTS cell TEXT,
+        ADD COLUMN IF NOT EXISTS village TEXT,
+        ADD COLUMN IF NOT EXISTS ics_serial TEXT,
+        ADD COLUMN IF NOT EXISTS registration_date DATE;
 
       CREATE TABLE IF NOT EXISTS payments (
         id SERIAL PRIMARY KEY,

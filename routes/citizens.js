@@ -27,7 +27,9 @@ router.get('/', async (req, res) => {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const { rows } = await pool.query(
-      `SELECT c.id, c.name, c.id_number, c.phone, c.address, c.place, c.notes, c.created_at,
+      `SELECT c.id, c.name, c.id_number, c.phone, c.gender, c.spouse_name, c.spouse_id,
+              c.num_other_persons, c.district, c.sector, c.cell, c.village, c.ics_serial,
+              c.registration_date, c.address, c.place, c.notes, c.created_at,
               (SELECT COUNT(*)::int FROM payments p WHERE p.citizen_id = c.id) AS payment_count,
               COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.citizen_id = c.id), 0) AS total_paid,
               (SELECT MAX(p.payment_date) FROM payments p WHERE p.citizen_id = c.id) AS last_payment_date
@@ -47,7 +49,9 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT c.id, c.name, c.id_number, c.phone, c.address, c.place, c.notes, c.created_at
+      `SELECT c.id, c.name, c.id_number, c.phone, c.gender, c.spouse_name, c.spouse_id,
+              c.num_other_persons, c.district, c.sector, c.cell, c.village, c.ics_serial,
+              c.registration_date, c.address, c.place, c.notes, c.created_at
        FROM citizens c WHERE c.id = $1`,
       [req.params.id]
     );
@@ -67,15 +71,27 @@ router.get('/:id', async (req, res) => {
 // Add a new citizen.
 router.post('/', async (req, res) => {
   try {
-    const { name, id_number, phone, address, place, notes } = req.body || {};
+    const {
+      name, id_number, phone, gender, spouse_name, spouse_id, num_other_persons,
+      district, sector, cell, village, ics_serial, registration_date,
+      address, place, notes,
+    } = req.body || {};
     if (!name || !id_number) {
       return res.status(400).json({ error: 'Name and ID number are required.' });
     }
     const { rows } = await pool.query(
-      `INSERT INTO citizens (name, id_number, phone, address, place, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO citizens (
+         name, id_number, phone, gender, spouse_name, spouse_id, num_other_persons,
+         district, sector, cell, village, ics_serial, registration_date, address, place, notes
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
-      [name.trim(), id_number.trim(), phone || '', address || '', place || '', notes || '']
+      [
+        name.trim(), id_number.trim(), phone || '', gender || '', spouse_name || '', spouse_id || '',
+        num_other_persons === '' || num_other_persons == null ? null : num_other_persons,
+        district || '', sector || '', cell || '', village || '', ics_serial || '',
+        registration_date || null, address || '', place || '', notes || '',
+      ]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -90,13 +106,25 @@ router.post('/', async (req, res) => {
 // Update a citizen.
 router.put('/:id', async (req, res) => {
   try {
-    const { name, id_number, phone, address, place, notes } = req.body || {};
+    const {
+      name, id_number, phone, gender, spouse_name, spouse_id, num_other_persons,
+      district, sector, cell, village, ics_serial, registration_date,
+      address, place, notes,
+    } = req.body || {};
     const { rowCount, rows } = await pool.query(
       `UPDATE citizens
-       SET name = $1, id_number = $2, phone = $3, address = $4, place = $5, notes = $6
-       WHERE id = $7
+       SET name = $1, id_number = $2, phone = $3, gender = $4, spouse_name = $5,
+           spouse_id = $6, num_other_persons = $7, district = $8, sector = $9,
+           cell = $10, village = $11, ics_serial = $12, registration_date = $13,
+           address = $14, place = $15, notes = $16
+       WHERE id = $17
        RETURNING *`,
-      [name.trim(), id_number.trim(), phone || '', address || '', place || '', notes || '', req.params.id]
+      [
+        name.trim(), id_number.trim(), phone || '', gender || '', spouse_name || '', spouse_id || '',
+        num_other_persons === '' || num_other_persons == null ? null : num_other_persons,
+        district || '', sector || '', cell || '', village || '', ics_serial || '',
+        registration_date || null, address || '', place || '', notes || '', req.params.id,
+      ]
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Citizen not found.' });
     res.json(rows[0]);

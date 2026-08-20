@@ -9,19 +9,29 @@ export default function Register({ onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const isAdminCreating = !!localStorage.getItem('token');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
     try {
       const { data } = await api.post('/auth/register', { name, email, password });
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      onLogin(data.user);
-      navigate('/');
+      if (isAdminCreating) {
+        setSuccess(`${t('auth.accountCreated')} ${data.user.email}`);
+        setName('');
+        setEmail('');
+        setPassword('');
+      } else {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        onLogin(data.user);
+        navigate('/');
+      }
     } catch (err) {
       setError(apiError(err));
     } finally {
@@ -35,10 +45,13 @@ export default function Register({ onLogin }) {
         <div className="text-center mb-4">
           <span className="auth-brand mx-auto d-flex">🗂️</span>
           <h1 className="h3 mb-1">{t('auth.register.title')}</h1>
-          <p className="text-muted mb-0">{t('auth.register.subtitle')}</p>
+          <p className="text-muted mb-0">
+            {t(isAdminCreating ? 'auth.register.subtitleAdmin' : 'auth.register.subtitle')}
+          </p>
         </div>
 
         {error && <div className="alert alert-danger py-2">{error}</div>}
+        {success && <div className="alert alert-success py-2">{success}</div>}
 
         <form onSubmit={handleSubmit}>
           <div className="mb-3">
@@ -79,8 +92,13 @@ export default function Register({ onLogin }) {
         </form>
 
         <div className="text-center mt-3 small text-muted">
-          {t('auth.haveAccount')}{' '}
-          <Link to="/login">{t('auth.signin')}</Link>
+          {isAdminCreating ? (
+            <Link to="/">{t('auth.backToApp')}</Link>
+          ) : (
+            <>
+              {t('auth.haveAccount')} <Link to="/login">{t('auth.signin')}</Link>
+            </>
+          )}
         </div>
       </div>
     </div>

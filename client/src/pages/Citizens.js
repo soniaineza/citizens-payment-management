@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import api, { formatMoney } from '../api';
 import { useI18n, apiError, formatDate } from '../i18n';
 
-const emptyForm = { name: '', id_number: '', phone: '', address: '', place: '', notes: '' };
+const emptyForm = {
+  name: '', id_number: '', phone: '', gender: '', spouse_name: '', spouse_id: '',
+  num_other_persons: '', district: '', sector: '', cell: '', village: '',
+  ics_serial: '', registration_date: '', address: '', place: '', notes: '',
+};
 
 export default function Citizens() {
   const { t } = useI18n();
@@ -49,7 +53,15 @@ export default function Citizens() {
 
   const openEdit = (c) => {
     setEditing(c);
-    setForm({ name: c.name, id_number: c.id_number, phone: c.phone || '', address: c.address || '', place: c.place || '', notes: c.notes || '' });
+    setForm({
+      name: c.name, id_number: c.id_number, phone: c.phone || '', gender: c.gender || '',
+      spouse_name: c.spouse_name || '', spouse_id: c.spouse_id || '',
+      num_other_persons: c.num_other_persons == null ? '' : c.num_other_persons,
+      district: c.district || '', sector: c.sector || '', cell: c.cell || '',
+      village: c.village || '', ics_serial: c.ics_serial || '',
+      registration_date: c.registration_date || '', address: c.address || '',
+      place: c.place || '', notes: c.notes || '',
+    });
     setModalError('');
     setShowModal(true);
   };
@@ -139,9 +151,11 @@ export default function Citizens() {
               <thead>
                 <tr>
                   <th>{t('cit.thName')}</th>
+                  <th>{t('cit.thGender')}</th>
                   <th>{t('cit.thId')}</th>
                   <th>{t('cit.thPhone')}</th>
                   <th>{t('cit.thPlace')}</th>
+                  <th>{t('cit.thVillage')}</th>
                   <th>{t('cit.thStatus')}</th>
                   <th className="text-end">{t('cit.thTotalPaid')}</th>
                   <th>{t('cit.thLastPayment')}</th>
@@ -154,9 +168,11 @@ export default function Citizens() {
                   return (
                     <tr key={c.id}>
                       <td className="fw-semibold">{c.name}</td>
+                      <td>{c.gender || '—'}</td>
                       <td>{c.id_number}</td>
                       <td>{c.phone || '—'}</td>
                       <td>{c.place || '—'}</td>
+                      <td>{c.village || '—'}</td>
                       <td>
                         <span className={`badge ${paid ? 'badge-paid' : 'badge-unpaid'}`}>
                           {paid ? t('cit.paid') : t('cit.unpaid')}
@@ -220,6 +236,60 @@ export default function Citizens() {
                       <input className="form-control" value={form.place}
                         placeholder={t('cit.placeExample')}
                         onChange={(e) => setForm({ ...form, place: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.gender')}</label>
+                      <select className="form-select" value={form.gender}
+                        onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+                        <option value="">—</option>
+                        <option value="M">{t('cit.genderM')}</option>
+                        <option value="F">{t('cit.genderF')}</option>
+                      </select>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.regDate')}</label>
+                      <input type="date" className="form-control" value={form.registration_date}
+                        onChange={(e) => setForm({ ...form, registration_date: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.spouseName')}</label>
+                      <input className="form-control" value={form.spouse_name}
+                        onChange={(e) => setForm({ ...form, spouse_name: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.spouseId')}</label>
+                      <input className="form-control" value={form.spouse_id}
+                        onChange={(e) => setForm({ ...form, spouse_id: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.numPersons')}</label>
+                      <input type="number" min="0" className="form-control" value={form.num_other_persons}
+                        onChange={(e) => setForm({ ...form, num_other_persons: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.icsSerial')}</label>
+                      <input className="form-control" value={form.ics_serial}
+                        onChange={(e) => setForm({ ...form, ics_serial: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.district')}</label>
+                      <input className="form-control" value={form.district}
+                        onChange={(e) => setForm({ ...form, district: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.sector')}</label>
+                      <input className="form-control" value={form.sector}
+                        onChange={(e) => setForm({ ...form, sector: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.cell')}</label>
+                      <input className="form-control" value={form.cell}
+                        onChange={(e) => setForm({ ...form, cell: e.target.value })} />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">{t('cit.village')}</label>
+                      <input className="form-control" value={form.village}
+                        onChange={(e) => setForm({ ...form, village: e.target.value })} />
                     </div>
                     <div className="col-12">
                       <label className="form-label">{t('cit.address')}</label>
