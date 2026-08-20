@@ -9,6 +9,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Ensure the database schema is ready before handling API requests.
+// Needed on serverless (Vercel) where init() is not called on boot.
+let dbReady = null;
+app.use('/api', async (req, res, next) => {
+  try {
+    if (!dbReady) dbReady = init();
+    await dbReady;
+    next();
+  } catch (err) {
+    console.error('Database init failed:', err.message);
+    res.status(500).json({ error: 'Database is not ready.' });
+  }
+});
+
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.use('/api/auth', require('./routes/auth'));
