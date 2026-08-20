@@ -72,6 +72,15 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(payment_date);
       CREATE INDEX IF NOT EXISTS idx_citizens_place ON citizens(place);
     `);
+
+    // Enforce case-insensitive ID uniqueness at the database level too.
+    // Wrapped so the app still starts if pre-existing data already has
+    // near-duplicate IDs (the API-level check above still blocks new ones).
+    try {
+      await client.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_citizens_id_number_lower ON citizens (LOWER(id_number))');
+    } catch (e) {
+      console.warn('Could not create case-insensitive unique index on citizens.id_number:', e.message);
+    }
   } finally {
     client.release();
   }

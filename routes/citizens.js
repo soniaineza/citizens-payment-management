@@ -79,6 +79,13 @@ router.post('/', async (req, res) => {
     if (!name || !id_number) {
       return res.status(400).json({ error: 'Name and ID number are required.' });
     }
+    const dup = await pool.query(
+      'SELECT id, name FROM citizens WHERE LOWER(id_number) = LOWER($1)',
+      [id_number.trim()]
+    );
+    if (dup.rows.length > 0) {
+      return res.status(409).json({ error: 'A citizen with that ID number already exists.' });
+    }
     const { rows } = await pool.query(
       `INSERT INTO citizens (
          name, id_number, phone, gender, spouse_name, spouse_id, num_other_persons,
@@ -111,6 +118,13 @@ router.put('/:id', async (req, res) => {
       district, sector, cell, village, ics_serial, registration_date,
       address, place, notes,
     } = req.body || {};
+    const dup = await pool.query(
+      'SELECT id, name FROM citizens WHERE LOWER(id_number) = LOWER($1) AND id <> $2',
+      [id_number.trim(), req.params.id]
+    );
+    if (dup.rows.length > 0) {
+      return res.status(409).json({ error: 'A citizen with that ID number already exists.' });
+    }
     const { rowCount, rows } = await pool.query(
       `UPDATE citizens
        SET name = $1, id_number = $2, phone = $3, gender = $4, spouse_name = $5,

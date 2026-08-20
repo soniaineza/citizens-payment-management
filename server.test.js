@@ -96,6 +96,23 @@ describe('Citizen Register API', () => {
     expect(res.statusCode).toBe(409);
   });
 
+  test('case-insensitive duplicate ID number is rejected', async () => {
+    const res = await request(app)
+      .post('/api/citizens')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Lowercase Copy', id_number: `id${uniq}`.toLowerCase() });
+    expect(res.statusCode).toBe(409);
+  });
+
+  test('search finds a citizen by ID number', async () => {
+    const res = await request(app)
+      .get(`/api/citizens?search=${encodeURIComponent(`id${uniq}`)}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.statusCode).toBe(200);
+    const c = res.body.find((x) => x.id === citizenId);
+    expect(c).toBeTruthy();
+  });
+
   test('list citizens shows payment status', async () => {
     const res = await request(app)
       .get('/api/citizens')
