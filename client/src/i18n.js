@@ -326,7 +326,7 @@ const translations = {
     'cit.importHint': 'Colonnes CSV : name (requis), id_number (requis), phone, gender, place, village, district, sector, cell, address, notes',
     'cit.importing': 'Importation…',
     'cit.importResult': 'Import terminé : {imported} ajoutés, {skipped} ignorés sur {total} lignes.',
-    'cit.importError': 'Impossible d'importer le fichier. Vérifiez le format.',
+    'cit.importError': 'Impossible d\u2019importer le fichier. V\u00e9rifiez le format.',
     'cit.exportCsv': 'Exporter CSV',
     'cit.bulkDelete': 'Supprimer la sélection',
     'cit.bulkDeleteConfirm': 'Supprimer {count} citoyens sélectionnés ? Tous leurs paiements seront également supprimés.',
