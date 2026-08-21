@@ -191,8 +191,8 @@ export default function Payments({ user }) {
         idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
         amtIdx = headers.findIndex((h) => fuzzyMatchCol(h, amtVariants));
         if (idIdx === -1 || amtIdx === -1) {
-          setImportPreview({ rows: [], error: `Could not find ID/amount columns. Found: ${headers.join(', ')}. Please use "id_number" and "amount" as column headers.` });
-          return;
+          idIdx = 0;
+          amtIdx = headers.length > 1 ? 1 : 0;
         }
         const dateIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['payment_date', 'date', 'date paiement', 'date de paiement']));
         const placeIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['place', 'lieu', 'location']));

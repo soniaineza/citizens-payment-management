@@ -208,8 +208,9 @@ export default function Citizens({ user }) {
       nameIdx = headers.findIndex((h) => fuzzyMatchCol(h, nameVariants));
       idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
       if (nameIdx === -1 || idIdx === -1) {
-        setImportPreview({ rows: [], error: `Could not find name/ID columns. Found: ${headers.join(', ')}. Please use "name" and "id_number" as column headers.` });
-        return;
+        // No name/id found — use first two columns as generic name/id
+        nameIdx = 0;
+        idIdx = headers.length > 1 ? 1 : 0;
       }
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',').map((c) => c.trim());
@@ -237,8 +238,8 @@ export default function Citizens({ user }) {
         nameIdx = headers.findIndex((h) => fuzzyMatchCol(h, nameVariants));
         idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
         if (nameIdx === -1 || idIdx === -1) {
-          setImportPreview({ rows: [], error: `Could not find name/ID columns. Found: ${headers.join(', ')}. Please use "name" and "id_number" as column headers.` });
-          return;
+          nameIdx = 0;
+          idIdx = headers.length > 1 ? 1 : 0;
         }
         for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
           const r = rawRows[i] || [];
