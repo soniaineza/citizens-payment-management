@@ -172,6 +172,7 @@ router.post('/import', async (req, res) => {
     // --- Normalize a header: lowercase, convert ALL whitespace to spaces, strip junk ---
     const normH = (h) => h.toLowerCase()
       .replace(/[\s\u00A0\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g, ' ')
+      .replace(/\s*\(.*?\)\s*/g, ' ')
       .replace(/[^a-z0-9 ]/g, '')
       .replace(/\s+/g, ' ').trim();
 
