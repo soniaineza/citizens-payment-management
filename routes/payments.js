@@ -99,8 +99,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Import payments from CSV.
-// CSV columns: citizen_id (or id_number), amount, payment_date, place, method, notes
+// Import payments from CSV/Excel. Auto-creates new columns if headers don't match existing schema.
 router.post('/import', async (req, res) => {
   try {
     if (!req.body || !req.body.csv) {
@@ -108,7 +107,6 @@ router.post('/import', async (req, res) => {
     }
 
     const results = [];
-    const errors = [];
     const stream = Readable.from(req.body.csv);
 
     await new Promise((resolve, reject) => {
@@ -118,6 +116,52 @@ router.post('/import', async (req, res) => {
         .on('end', resolve)
         .on('error', reject);
     });
+
+    if (results.length === 0) {
+      return res.json({ imported: 0, skipped: 0, total: 0, newColumns: [] });
+    }
+
+    const knownColumns = {
+      citizen_id: 'citizen_id', 'citizen id': 'citizen_id',
+      id_number: 'citizen_id_ref', 'id number': 'citizen_id_ref', id: 'citizen_id_ref',
+      amount: 'amount', payment_date: 'payment_date', date: 'payment_date',
+      place: 'place', method: 'method', notes: 'notes',
+    };
+
+    const allHeaders = new Set();
+    results.forEach((row) => Object.keys(row).forEach((k) => allHeaders.add(k)));
+
+    const { rows: colRows } = await pool.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'payments'"
+    );
+    const existingCols = new Set(colRows.map((r) => r.column_name));
+
+    const headerMap = {};
+    const newColumns = [];
+    for (const header of allHeaders) {
+      const normalized = header.toLowerCase().trim();
+      const mapped = knownColumns[normalized] || normalized;
+      headerMap[header] = mapped;
+
+      if (!existingCols.has(mapped) && mapped !== 'citizen_id_ref') {
+        newColumns.push(mapped);
+      }
+    }
+
+    for (const col of newColumns) {
+      const safeCol = col.replace(/[^a-z0-9_]/g, '_');
+      try {
+        await pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS "${safeCol}" TEXT`);
+        headerMap[Object.keys(headerMap).find((k) => headerMap[k] === col)] = safeCol;
+      } catch (e) {
+        console.warn(`Could not add column ${safeCol}:`, e.message);
+      }
+    }
+
+    const { rows: colRows2 } = await pool.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'payments'"
+    );
+    const finalCols = new Set(colRows2.map((r) => r.column_name));
 
     let imported = 0;
     let skipped = 0;
@@ -141,25 +185,58 @@ router.post('/import', async (req, res) => {
       }
 
       try {
+        const cols = [];
+        const vals = [];
+        let paramIdx = 1;
+
+        cols.push('citizen_id', 'amount');
+        vals.push(citizen.rows[0].id, amount);
+        paramIdx += 2;
+
+        if (finalCols.has('payment_date')) {
+          cols.push('payment_date');
+          vals.push(row.payment_date || row.Date || new Date().toISOString().slice(0, 10));
+          paramIdx++;
+        }
+        if (finalCols.has('place')) {
+          cols.push('place');
+          vals.push((row.place || row.Place || '').trim());
+          paramIdx++;
+        }
+        if (finalCols.has('method')) {
+          cols.push('method');
+          vals.push((row.method || row.Method || 'Cash').trim());
+          paramIdx++;
+        }
+        if (finalCols.has('notes')) {
+          cols.push('notes');
+          vals.push((row.notes || row.Notes || '').trim());
+          paramIdx++;
+        }
+
+        for (const header of Object.keys(row)) {
+          const normalized = header.toLowerCase().trim();
+          const mapped = headerMap[header];
+          if (mapped && !knownColumns[normalized] && finalCols.has(mapped)) {
+            cols.push(`"${mapped}"`);
+            vals.push(row[header] || '');
+            paramIdx++;
+          }
+        }
+
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
         await pool.query(
-          `INSERT INTO payments (citizen_id, amount, payment_date, place, method, notes)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            citizen.rows[0].id,
-            amount,
-            row.payment_date || row.Date || new Date().toISOString().slice(0, 10),
-            (row.place || row.Place || '').trim(),
-            (row.method || row.Method || 'Cash').trim(),
-            (row.notes || row.Notes || '').trim(),
-          ]
+          `INSERT INTO payments (${cols.map((c) => c.includes('"') ? c : `"${c}"`).join(', ')}) VALUES (${placeholders})`,
+          vals
         );
         imported++;
       } catch (err) {
+        console.error('Import payment row error:', err.message);
         skipped++;
       }
     }
 
-    res.json({ imported, skipped, total: results.length });
+    res.json({ imported, skipped, total: results.length, newColumns });
   } catch (err) {
     console.error('Import payments error:', err.message);
     res.status(500).json({ error: 'Could not import payments.' });

@@ -153,7 +153,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Import citizens from CSV.
+// Import citizens from CSV/Excel. Auto-creates new columns if headers don't match existing schema.
 router.post('/import', async (req, res) => {
   try {
     if (!req.body || !req.body.csv) {
@@ -161,7 +161,6 @@ router.post('/import', async (req, res) => {
     }
 
     const results = [];
-    const errors = [];
     const stream = Readable.from(req.body.csv);
 
     await new Promise((resolve, reject) => {
@@ -172,12 +171,69 @@ router.post('/import', async (req, res) => {
         .on('error', reject);
     });
 
+    if (results.length === 0) {
+      return res.json({ imported: 0, skipped: 0, total: 0, newColumns: [] });
+    }
+
+    // Known columns that we handle with specific mapping
+    const knownColumns = {
+      name: 'name', id_number: 'id_number', 'id number': 'id_number', id: 'id_number',
+      phone: 'phone', gender: 'gender', spouse_name: 'spouse_name', 'spouse name': 'spouse_name',
+      spouse_id: 'spouse_id', 'spouse id': 'spouse_id',
+      num_other_persons: 'num_other_persons', 'num other persons': 'num_other_persons',
+      district: 'district', sector: 'sector', cell: 'cell', village: 'village',
+      ics_serial: 'ics_serial', 'ics serial': 'ics_serial',
+      registration_date: 'registration_date', 'registration date': 'registration_date',
+      address: 'address', place: 'place', notes: 'notes',
+    };
+
+    // Get all unique header keys from all rows
+    const allHeaders = new Set();
+    results.forEach((row) => Object.keys(row).forEach((k) => allHeaders.add(k)));
+
+    // Get existing columns from citizens table
+    const { rows: colRows } = await pool.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'citizens'"
+    );
+    const existingCols = new Set(colRows.map((r) => r.column_name));
+
+    // Map each header to a real column name, detect new ones
+    const headerMap = {};
+    const newColumns = [];
+    for (const header of allHeaders) {
+      const normalized = header.toLowerCase().trim();
+      const mapped = knownColumns[normalized] || normalized;
+      headerMap[header] = mapped;
+
+      if (!existingCols.has(mapped)) {
+        newColumns.push(mapped);
+      }
+    }
+
+    // Add new columns to the citizens table
+    for (const col of newColumns) {
+      const safeCol = col.replace(/[^a-z0-9_]/g, '_');
+      if (safeCol === 'name' || safeCol === 'id_number' || safeCol === 'id') continue;
+      try {
+        await pool.query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS "${safeCol}" TEXT`);
+        headerMap[Object.keys(headerMap).find((k) => headerMap[k] === col)] = safeCol;
+      } catch (e) {
+        console.warn(`Could not add column ${safeCol}:`, e.message);
+      }
+    }
+
+    // Refresh existing columns after ALTER
+    const { rows: colRows2 } = await pool.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'citizens'"
+    );
+    const finalCols = new Set(colRows2.map((r) => r.column_name));
+
     let imported = 0;
     let skipped = 0;
 
     for (const row of results) {
       const name = (row.name || row.Name || '').trim();
-      const id_number = (row.id_number || row.id_number || row['ID Number'] || row.ID || '').trim();
+      const id_number = (row.id_number || row['ID Number'] || row.ID || '').trim();
 
       if (!name || !id_number) {
         skipped++;
@@ -194,36 +250,66 @@ router.post('/import', async (req, res) => {
       }
 
       try {
+        // Build dynamic columns and values
+        const cols = [];
+        const vals = [];
+        let paramIdx = 1;
+
+        // Always include name and id_number
+        cols.push('name', 'id_number');
+        vals.push(name, id_number);
+        paramIdx += 2;
+
+        // Map known columns
+        const knownMapping = {
+          phone: row.phone || row.Phone || '',
+          gender: row.gender || row.Gender || '',
+          spouse_name: row.spouse_name || row['Spouse Name'] || '',
+          spouse_id: row.spouse_id || row['Spouse ID'] || '',
+          num_other_persons: row.num_other_persons || row['Num Other Persons'] || null,
+          district: row.district || row.District || '',
+          sector: row.sector || row.Sector || '',
+          cell: row.cell || row.Cell || '',
+          village: row.village || row.Village || '',
+          ics_serial: row.ics_serial || row['ICS Serial'] || '',
+          registration_date: row.registration_date || row['Registration Date'] || null,
+          address: row.address || row.Address || '',
+          place: row.place || row.Place || '',
+          notes: row.notes || row.Notes || '',
+        };
+
+        for (const [key, val] of Object.entries(knownMapping)) {
+          if (finalCols.has(key)) {
+            cols.push(key);
+            vals.push(typeof val === 'string' ? val.trim() : val);
+            paramIdx++;
+          }
+        }
+
+        // Add any custom/dynamic columns from the CSV
+        for (const header of Object.keys(row)) {
+          const normalized = header.toLowerCase().trim();
+          const mapped = headerMap[header];
+          if (mapped && !knownColumns[normalized] && finalCols.has(mapped)) {
+            cols.push(`"${mapped}"`);
+            vals.push(row[header] || '');
+            paramIdx++;
+          }
+        }
+
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
         await pool.query(
-          `INSERT INTO citizens (name, id_number, phone, gender, spouse_name, spouse_id,
-            num_other_persons, district, sector, cell, village, ics_serial,
-            registration_date, address, place, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-          [
-            name, id_number,
-            (row.phone || row.Phone || '').trim(),
-            (row.gender || row.Gender || '').trim(),
-            (row.spouse_name || row['Spouse Name'] || '').trim(),
-            (row.spouse_id || row['Spouse ID'] || '').trim(),
-            row.num_other_persons || row['Num Other Persons'] || null,
-            (row.district || row.District || '').trim(),
-            (row.sector || row.Sector || '').trim(),
-            (row.cell || row.Cell || '').trim(),
-            (row.village || row.Village || '').trim(),
-            (row.ics_serial || row['ICS Serial'] || '').trim(),
-            row.registration_date || row['Registration Date'] || null,
-            (row.address || row.Address || '').trim(),
-            (row.place || row.Place || '').trim(),
-            (row.notes || row.Notes || '').trim(),
-          ]
+          `INSERT INTO citizens (${cols.map((c) => c.includes('"') ? c : `"${c}"`).join(', ')}) VALUES (${placeholders})`,
+          vals
         );
         imported++;
       } catch (err) {
+        console.error('Import row error:', err.message);
         skipped++;
       }
     }
 
-    res.json({ imported, skipped, total: results.length });
+    res.json({ imported, skipped, total: results.length, newColumns });
   } catch (err) {
     console.error('Import citizens error:', err.message);
     res.status(500).json({ error: 'Could not import citizens.' });

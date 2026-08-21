@@ -28,6 +28,7 @@ export default function Payments({ user }) {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
+  const [newColumns, setNewColumns] = useState([]);
   const [receiptPayment, setReceiptPayment] = useState(null);
 
   const isViewer = user?.role === 'viewer';
@@ -121,6 +122,11 @@ export default function Payments({ user }) {
     doc.save(`receipt-${p.id}.pdf`);
   };
 
+  const knownPaymentCols = new Set([
+    'citizen_id', 'citizen id', 'id_number', 'id number', 'id',
+    'amount', 'payment_date', 'date', 'place', 'method', 'notes',
+  ]);
+
   const handleFileSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -129,18 +135,19 @@ export default function Payments({ user }) {
 
     const ext = file.name.split('.').pop().toLowerCase();
     let rows = [];
+    let headers = [];
     if (ext === 'csv') {
       const text = await file.text();
       const lines = text.split('\n').filter((l) => l.trim());
       if (lines.length < 2) { setImportPreview({ rows: [], error: 'File has no data rows.' }); return; }
-      const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
-      const idIdx = headers.findIndex((h) => h === 'id_number' || h === 'id number' || h === 'id');
-      const amtIdx = headers.findIndex((h) => h === 'amount');
+      headers = lines[0].split(',').map((h) => h.trim());
+      const idIdx = headers.findIndex((h) => h.toLowerCase() === 'id_number' || h.toLowerCase() === 'id number' || h.toLowerCase() === 'id');
+      const amtIdx = headers.findIndex((h) => h.toLowerCase() === 'amount');
       if (idIdx === -1 || amtIdx === -1) { setImportPreview({ rows: [], error: 'CSV must have "id_number" and "amount" columns.' }); return; }
-      const dateIdx = headers.findIndex((h) => h === 'payment_date' || h === 'date');
-      const placeIdx = headers.findIndex((h) => h === 'place');
-      const methodIdx = headers.findIndex((h) => h === 'method');
-      const notesIdx = headers.findIndex((h) => h === 'notes');
+      const dateIdx = headers.findIndex((h) => h.toLowerCase() === 'payment_date' || h.toLowerCase() === 'date');
+      const placeIdx = headers.findIndex((h) => h.toLowerCase() === 'place');
+      const methodIdx = headers.findIndex((h) => h.toLowerCase() === 'method');
+      const notesIdx = headers.findIndex((h) => h.toLowerCase() === 'notes');
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',').map((c) => c.trim());
         rows.push({
@@ -156,6 +163,7 @@ export default function Payments({ user }) {
       const wb = XLSX.read(data);
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(sheet);
+      if (json.length > 0) headers = Object.keys(json[0]);
       for (let i = 0; i < json.length; i++) {
         const r = json[i];
         rows.push({
@@ -165,6 +173,11 @@ export default function Payments({ user }) {
         });
       }
     }
+
+    // Detect new columns
+    const detected = headers.map((h) => h.toLowerCase().trim()).filter((h) => h && !knownPaymentCols.has(h));
+    const uniqueNew = [...new Set(detected)];
+    setNewColumns(uniqueNew);
 
     const citizenIdMap = {};
     citizens.forEach((c) => { citizenIdMap[c.id_number.toLowerCase()] = true; });
@@ -444,6 +457,11 @@ export default function Payments({ user }) {
                 {importResult && !importResult.error && (
                   <div className="alert alert-success py-2">
                     {t('pay.importResult').replace('{imported}', importResult.imported).replace('{skipped}', importResult.skipped).replace('{total}', importResult.total)}
+                    {importResult.newColumns && importResult.newColumns.length > 0 && (
+                      <div className="mt-1 small">
+                        New columns created: <strong>{importResult.newColumns.join(', ')}</strong>
+                      </div>
+                    )}
                   </div>
                 )}
                 {importResult && importResult.error && (
@@ -451,6 +469,11 @@ export default function Payments({ user }) {
                 )}
                 {importPreview && importPreview.error && (
                   <div className="alert alert-danger py-2">{importPreview.error}</div>
+                )}
+                {newColumns.length > 0 && (
+                  <div className="alert alert-info py-2 mb-2" style={{ background: 'var(--tint-indigo)', color: 'var(--tint-indigo-fg)' }}>
+                    New columns will be created: <strong>{newColumns.join(', ')}</strong>
+                  </div>
                 )}
                 {importPreview && importPreview.rows && importPreview.rows.length > 0 && (
                   <div className="mb-3">

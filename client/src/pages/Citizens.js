@@ -32,6 +32,7 @@ export default function Citizens({ user }) {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
+  const [newColumns, setNewColumns] = useState([]);
   const navigate = useNavigate();
 
   const isViewer = user?.role === 'viewer';
@@ -162,6 +163,14 @@ export default function Citizens({ user }) {
     }
   };
 
+  const knownCitizenCols = new Set([
+    'name', 'id_number', 'id number', 'id', 'phone', 'gender',
+    'spouse_name', 'spouse name', 'spouse_id', 'spouse id',
+    'num_other_persons', 'num other persons', 'district', 'sector',
+    'cell', 'village', 'ics_serial', 'ics serial',
+    'registration_date', 'registration date', 'address', 'place', 'notes',
+  ]);
+
   const handleFileSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -170,13 +179,14 @@ export default function Citizens({ user }) {
 
     const ext = file.name.split('.').pop().toLowerCase();
     let rows = [];
+    let headers = [];
     if (ext === 'csv') {
       const text = await file.text();
       const lines = text.split('\n').filter((l) => l.trim());
       if (lines.length < 2) { setImportPreview({ rows: [], error: 'File has no data rows.' }); return; }
-      const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
-      const nameIdx = headers.findIndex((h) => h === 'name');
-      const idIdx = headers.findIndex((h) => h === 'id_number' || h === 'id number' || h === 'id');
+      headers = lines[0].split(',').map((h) => h.trim());
+      const nameIdx = headers.findIndex((h) => h.toLowerCase() === 'name');
+      const idIdx = headers.findIndex((h) => h.toLowerCase() === 'id_number' || h.toLowerCase() === 'id number' || h.toLowerCase() === 'id');
       if (nameIdx === -1 || idIdx === -1) { setImportPreview({ rows: [], error: 'CSV must have "name" and "id_number" columns.' }); return; }
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',').map((c) => c.trim());
@@ -187,11 +197,17 @@ export default function Citizens({ user }) {
       const wb = XLSX.read(data);
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(sheet);
+      if (json.length > 0) headers = Object.keys(json[0]);
       for (let i = 0; i < json.length; i++) {
         const r = json[i];
         rows.push({ line: i + 2, name: r.name || r.Name || '', idNumber: r.id_number || r['ID Number'] || r.ID || '' });
       }
     }
+
+    // Detect new columns
+    const detected = headers.map((h) => h.toLowerCase().trim()).filter((h) => h && !knownCitizenCols.has(h));
+    const uniqueNew = [...new Set(detected)];
+    setNewColumns(uniqueNew);
 
     const existingIds = new Set(citizens.map((c) => c.id_number.toLowerCase()));
     const preview = rows.map((r) => {
@@ -460,6 +476,11 @@ export default function Citizens({ user }) {
                 {importResult && !importResult.error && (
                   <div className="alert alert-success py-2">
                     {t('cit.importResult').replace('{imported}', importResult.imported).replace('{skipped}', importResult.skipped).replace('{total}', importResult.total)}
+                    {importResult.newColumns && importResult.newColumns.length > 0 && (
+                      <div className="mt-1 small">
+                        New columns created: <strong>{importResult.newColumns.join(', ')}</strong>
+                      </div>
+                    )}
                   </div>
                 )}
                 {importResult && importResult.error && (
@@ -467,6 +488,11 @@ export default function Citizens({ user }) {
                 )}
                 {importPreview && importPreview.error && (
                   <div className="alert alert-danger py-2">{importPreview.error}</div>
+                )}
+                {newColumns.length > 0 && (
+                  <div className="alert alert-info py-2 mb-2" style={{ background: 'var(--tint-indigo)', color: 'var(--tint-indigo-fg)' }}>
+                    New columns will be created: <strong>{newColumns.join(', ')}</strong>
+                  </div>
                 )}
                 {importPreview && importPreview.rows && importPreview.rows.length > 0 && (
                   <div className="mb-3">
