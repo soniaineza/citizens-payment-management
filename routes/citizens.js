@@ -169,6 +169,10 @@ router.post('/import', async (req, res) => {
       return res.json({ imported: 0, updated: 0, skipped: 0, total: 0, newColumns: [] });
     }
 
+    // Columns that need non-text types (NULL instead of '' for empty values)
+    const intCols = new Set(['num_other_persons']);
+    const dateCols = new Set(['registration_date']);
+
     const nameMap = {
       name: 'name', 'full name': 'name', nom: 'name', 'nom complet': 'name',
       'citizen name': 'name', 'citizen_name': 'name', iname: 'name',
@@ -239,6 +243,20 @@ router.post('/import', async (req, res) => {
       return '';
     };
 
+    // Convert a raw string value to the proper type for the DB column
+    const toTypedVal = (rawVal, dbCol) => {
+      if (!rawVal) return null;
+      if (intCols.has(dbCol)) {
+        const n = parseInt(rawVal, 10);
+        return isNaN(n) ? null : n;
+      }
+      if (dateCols.has(dbCol)) {
+        // Accept YYYY-MM-DD or similar
+        return rawVal || null;
+      }
+      return rawVal;
+    };
+
     const normRows = results.map((row, idx) => {
       let name = getVal(row, 'name');
       let id_number = getVal(row, 'id_number');
@@ -266,18 +284,16 @@ router.post('/import', async (req, res) => {
     for (const nr of normRows) {
       const { row, name, id_number } = nr;
       const colVals = { name, id_number };
-      for (const [dbCol, dbKey] of Object.entries({
-        phone: 'phone', gender: 'gender', spouse_name: 'spouse_name', spouse_id: 'spouse_id',
-        num_other_persons: 'num_other_persons', district: 'district', sector: 'sector',
-        cell: 'cell', village: 'village', ics_serial: 'ics_serial',
-        registration_date: 'registration_date', address: 'address', place: 'place', notes: 'notes',
-      })) {
-        if (finalCols.has(dbCol)) colVals[dbCol] = getVal(row, dbCol) || '';
+      for (const dbCol of ['phone', 'gender', 'spouse_name', 'spouse_id',
+        'num_other_persons', 'district', 'sector', 'cell', 'village', 'ics_serial',
+        'registration_date', 'address', 'place', 'notes']) {
+        if (finalCols.has(dbCol)) colVals[dbCol] = toTypedVal(getVal(row, dbCol), dbCol);
       }
       for (const [key, val] of Object.entries(row)) {
         const mapped = headerMap[key];
-        if (mapped && !nameMap[key.toLowerCase()] && !idMap[key.toLowerCase()] && !fieldMap[key.toLowerCase()] && finalCols.has(mapped)) {
-          colVals[mapped] = String(val || '').trim();
+        const kLower = key.toLowerCase().trim();
+        if (mapped && !nameMap[kLower] && !idMap[kLower] && !fieldMap[kLower] && finalCols.has(mapped)) {
+          colVals[mapped] = String(val || '').trim() || null;
         }
       }
       if (existingMap.has(id_number.toLowerCase())) {
@@ -292,6 +308,7 @@ router.post('/import', async (req, res) => {
     try {
       await client.query('BEGIN');
 
+      // Batch INSERT (500 rows at a time)
       for (let i = 0; i < toInsert.length; i += 500) {
         const batch = toInsert.slice(i, i + 500);
         if (batch.length === 0) continue;
@@ -302,7 +319,7 @@ router.post('/import', async (req, res) => {
         batch.forEach((row, ri) => {
           const rp = cols.map((_, ci) => `$${ri * cols.length + ci + 1}`);
           placeholders.push(`(${rp.join(', ')})`);
-          cols.forEach((c) => values.push(row[c] || ''));
+          cols.forEach((c) => values.push(row[c] == null ? null : row[c]));
         });
         try {
           await client.query(`INSERT INTO citizens (${colList}) VALUES ${placeholders.join(', ')}`, values);
@@ -313,19 +330,30 @@ router.post('/import', async (req, res) => {
         }
       }
 
-      for (const row of toUpdate) {
+      // Batch UPDATE using multi-row VALUES (100 at a time)
+      for (let i = 0; i < toUpdate.length; i += 100) {
+        const batch = toUpdate.slice(i, i + 100);
+        if (batch.length === 0) continue;
+        const cols = Object.keys(batch[0]).filter((c) => c !== 'id_number');
+        if (cols.length === 0) continue;
         try {
-          const cols = Object.keys(row).filter((c) => c !== 'id_number');
-          if (cols.length === 0) continue;
-          const setClause = cols.map((c, idx) => `"${c}" = $${idx + 2}`).join(', ');
+          const setClause = cols.map((c) => `"${c}" = v."${c}"`).join(', ');
+          const colsPerRow = cols.length + 1; // id_number + data cols
+          const valueRows = batch.map((r, ri) => {
+            const start = ri * colsPerRow + 1;
+            return '(' + Array.from({ length: colsPerRow }, (_, j) => `$${start + j}`).join(', ') + ')';
+          });
+          const flatParams = batch.flatMap((r) => [r.id_number, ...cols.map((c) => r[c] == null ? null : r[c])]);
           await client.query(
-            `UPDATE citizens SET ${setClause} WHERE LOWER(id_number) = LOWER($1)`,
-            [row.id_number, ...cols.map((c) => row[c] || '')]
+            `UPDATE citizens c SET ${setClause}
+             FROM (VALUES ${valueRows.join(', ')}) AS v(id_number, ${cols.map((c) => `"${c}"`).join(', ')})
+             WHERE LOWER(c.id_number) = LOWER(v.id_number)`,
+            flatParams
           );
-          updated++;
+          updated += batch.length;
         } catch (err) {
-          console.error('Update error:', err.message);
-          skipped++;
+          console.error('Batch update error:', err.message);
+          skipped += batch.length;
         }
       }
 
