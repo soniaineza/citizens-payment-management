@@ -164,15 +164,25 @@ export default function Citizens({ user }) {
   };
 
   const knownCitizenCols = new Set([
-    'name', 'id_number', 'id number', 'id', 'phone', 'gender',
-    'spouse_name', 'spouse name', 'spouse_id', 'spouse id',
-    'num_other_persons', 'num other persons', 'district', 'sector',
-    'cell', 'village', 'ics_serial', 'ics serial',
-    'registration_date', 'registration date', 'address', 'place', 'notes',
+    'name', 'full name', 'nom', 'nom complet', 'citizen name', 'citizen_name', 'iname',
+    'head of hh', 'head of household', 'name of head of hh', 'name of head', 'head', 'chef', 'household',
+    'id_number', 'id number', 'id', 'id no', 'id no.', 'nid', 'nin', 'identification', 'identity',
+    'numéro d\'identité', 'n° d\'identité', 'numéro identification', 'numéro', 'identité',
+    'phone', 'phone number', 'telephone', 'tel',
+    'gender', 'gender (m/f)', 'genre', 'sexe',
+    'spouse_name', 'spouse name', 'nom du conjoint', 'conjoint',
+    'spouse_id', 'spouse id', 'id conjoint', 'identité conjoint',
+    'num_other_persons', 'num other persons', 'number of other persons in hh', 'number of other persons',
+    'nombre personnes', 'persons',
+    'district', 'secteur', 'sector', 'cell', 'cellule', 'village',
+    'ics_serial', 'ics serial', 'icsserilnumber', 'ics_serial_number', 'serial number', 'numéro ics', 'n° ics',
+    'registration_date', 'registration date', 'date enregistrement', 'date inscription', 'date',
+    'address', 'adresse', 'place', 'lieu', 'location', 'notes', 'remarques', 'observation',
+    'no', 'num', 'number', '#',
   ]);
 
-  const nameVariants = ['name', 'full name', 'nom', 'nom complet', 'citizen name', 'citizen_name', 'iname'];
-  const idVariants = ['id_number', 'id number', 'id', 'numéro d\'identité', 'n° d\'identité', 'numéro identification', 'nid', 'nin', 'identification', 'identity', 'citizen_id', 'citizen id', 'num_citizen', 'num citizen'];
+  const nameVariants = ['name', 'full name', 'nom', 'nom complet', 'citizen name', 'citizen_name', 'iname', 'head', 'head of', 'name of head', 'head of hh', 'head of household', 'household', 'name of head of hh', 'chef'];
+  const idVariants = ['id_number', 'id number', 'id', 'numéro d\'identité', 'n° d\'identité', 'numéro identification', 'nid', 'nin', 'identification', 'identity', 'citizen_id', 'citizen id', 'num_citizen', 'num citizen', 'id no', 'id no.', 'id_number', 'numéro', 'identité'];
 
   const fuzzyMatchCol = (header, variants) => {
     const h = header.toLowerCase().replace(/[^a-z0-9àâçéèêëîïôùûüÿæœ\s]/g, '').trim();
