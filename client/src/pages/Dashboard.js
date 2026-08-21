@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import api, { formatMoney } from '../api';
 import { useI18n, apiError, formatDate } from '../i18n';
+
+const PIE_COLORS = ['#0b0b0f', '#4453c8', '#0e7a4d', '#b45309', '#b42318', '#7c3aed'];
 
 function StatCard({ icon, tone, label, value, sub }) {
   const toneClass = {
@@ -29,6 +32,8 @@ export default function Dashboard({ user }) {
   const [summary, setSummary] = useState(null);
   const [recentPayments, setRecentPayments] = useState([]);
   const [unpaid, setUnpaid] = useState([]);
+  const [monthly, setMonthly] = useState([]);
+  const [byPlace, setByPlace] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -37,13 +42,17 @@ export default function Dashboard({ user }) {
       api.get('/reports/summary'),
       api.get('/payments'),
       api.get('/citizens'),
+      api.get('/reports/monthly'),
+      api.get('/reports/by-place'),
     ])
-      .then(([sum, pays, citizens]) => {
+      .then(([sum, pays, citizens, monthRes, placeRes]) => {
         if (!active) return;
         setSummary(sum.data);
         setRecentPayments(pays.data.slice(0, 6));
         const unpaidList = citizens.data.filter((c) => (c.payment_count || 0) === 0).slice(0, 6);
         setUnpaid(unpaidList);
+        setMonthly(monthRes.data);
+        setByPlace(placeRes.data);
       })
       .catch((err) => setError(apiError(err)));
     return () => { active = false; };
@@ -74,6 +83,90 @@ export default function Dashboard({ user }) {
           </div>
         </div>
       )}
+
+      <div className="row g-4 mb-4">
+        <div className="col-lg-7">
+          <div className="kr-card">
+            <h5 className="mb-3">{t('dash.monthlyChart')}</h5>
+            {monthly.length === 0 ? (
+              <p className="text-muted mb-0">{t('dash.noPayments')}</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={monthly} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fill: 'var(--text-2)', fontSize: 12 }}
+                    axisLine={{ stroke: 'var(--border)' }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: 'var(--text-2)', fontSize: 12 }}
+                    axisLine={{ stroke: 'var(--border)' }}
+                    tickLine={false}
+                    tickFormatter={(v) => formatMoney(v)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      color: 'var(--text)',
+                    }}
+                    formatter={(value) => [formatMoney(value), t('dash.collected')]}
+                  />
+                  <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                    {monthly.map((_, i) => (
+                      <Cell key={i} fill="var(--text-3)" />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div className="col-lg-5">
+          <div className="kr-card">
+            <h5 className="mb-3">{t('dash.placeChart')}</h5>
+            {byPlace.length === 0 ? (
+              <p className="text-muted mb-0">{t('dash.noPayments')}</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={byPlace}
+                    dataKey="total"
+                    nameKey="place"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    innerRadius={50}
+                    paddingAngle={2}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={{ stroke: 'var(--text-3)' }}
+                  >
+                    {byPlace.map((_, i) => (
+                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      color: 'var(--text)',
+                    }}
+                    formatter={(value) => [formatMoney(value)]}
+                  />
+                  <Legend
+                    wrapperStyle={{ color: 'var(--text-2)' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="row g-4">
         <div className="col-lg-7">

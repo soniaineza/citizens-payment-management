@@ -83,4 +83,22 @@ router.get('/users', authRequired, async (req, res) => {
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
+router.put('/users/:id/role', authRequired, async (req, res) => {
+  try {
+    const { role } = req.body || {};
+    if (!role || !['admin', 'viewer'].includes(role)) {
+      return res.status(400).json({ error: 'Role must be admin or viewer.' });
+    }
+    const { rowCount, rows } = await pool.query(
+      'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, name, email, role',
+      [role, req.params.id]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'User not found.' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Update role error:', err.message);
+    res.status(500).json({ error: 'Could not update role.' });
+  }
+});
+
 module.exports = router;

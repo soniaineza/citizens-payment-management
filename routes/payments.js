@@ -166,6 +166,24 @@ router.post('/import', async (req, res) => {
   }
 });
 
+// Bulk delete payments.
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Please provide an array of payment IDs.' });
+    }
+    const { rowCount } = await pool.query(
+      `DELETE FROM payments WHERE id = ANY($1)`,
+      [ids]
+    );
+    res.json({ deleted: rowCount });
+  } catch (err) {
+    console.error('Bulk delete payments error:', err.message);
+    res.status(500).json({ error: 'Could not delete payments.' });
+  }
+});
+
 // Delete a payment.
 router.delete('/:id', async (req, res) => {
   try {

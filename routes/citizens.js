@@ -230,6 +230,24 @@ router.post('/import', async (req, res) => {
   }
 });
 
+// Bulk delete citizens.
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Please provide an array of citizen IDs.' });
+    }
+    const { rowCount } = await pool.query(
+      `DELETE FROM citizens WHERE id = ANY($1)`,
+      [ids]
+    );
+    res.json({ deleted: rowCount });
+  } catch (err) {
+    console.error('Bulk delete citizens error:', err.message);
+    res.status(500).json({ error: 'Could not delete citizens.' });
+  }
+});
+
 // Delete a citizen (their payments are removed too).
 router.delete('/:id', async (req, res) => {
   try {

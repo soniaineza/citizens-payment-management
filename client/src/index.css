@@ -611,3 +611,118 @@ html[data-theme='dark'] .btn-close {
     display: none;
   }
 }
+
+/* ---------- Mobile responsive improvements ---------- */
+@media (max-width: 576px) {
+  .stat-card .stat-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.1rem;
+    border-radius: 0.75rem;
+  }
+
+  .stat-card .stat-value {
+    font-size: 1.25rem;
+  }
+
+  .stat-card .stat-label {
+    font-size: 0.75rem;
+  }
+
+  .table-responsive {
+    font-size: 0.82rem;
+  }
+
+  .kr-card {
+    padding: 1rem;
+  }
+
+  .modal-dialog {
+    margin: 0.5rem;
+  }
+
+  .modal-content {
+    border-radius: 1rem;
+  }
+
+  .btn-lg {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .d-flex.gap-2 {
+    gap: 0.5rem !important;
+  }
+
+  h2 {
+    font-size: 1.3rem;
+  }
+
+  .row.g-3 > [class*="col-"] {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .nav-pills-menu {
+    gap: 0.15rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 0.25rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-pills-menu .nav-link {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.82rem;
+  }
+
+  .app-bar .main-container {
+    flex-wrap: nowrap;
+  }
+
+  .user-chip {
+    display: none !important;
+  }
+
+  .chart-container {
+    min-height: 250px;
+  }
+
+  /* Stack the table into card-like rows */
+  .table thead {
+    display: none;
+  }
+
+  .table tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 0.75rem 0;
+    gap: 0.25rem;
+  }
+
+  .table tbody td {
+    border: none !important;
+    padding: 0.15rem 0.5rem;
+  }
+
+  .table tbody td:before {
+    content: attr(data-label);
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-3);
+    display: block;
+    width: 100%;
+  }
+
+  .table tbody td:last-child {
+    width: 100%;
+    text-align: right;
+    border-top: 1px solid var(--border);
+    padding-top: 0.5rem;
+    margin-top: 0.25rem;
+  }
+}

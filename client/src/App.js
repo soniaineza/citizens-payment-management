@@ -85,6 +85,9 @@ function Layout({ user, onLogout }) {
               <span className="user-chip d-none d-md-inline-flex">
                 <span className="avatar">{initial}</span>
                 {user.name}
+                <span className="badge bg-secondary" style={{ fontSize: '0.65rem', padding: '0.2em 0.5em' }}>
+                  {user.role === 'admin' ? 'Admin' : 'Viewer'}
+                </span>
               </span>
             )}
             <button className="btn btn-outline-secondary btn-sm" onClick={handleLogout}>
@@ -97,8 +100,8 @@ function Layout({ user, onLogout }) {
       <main className="main-container">
         <Routes>
           <Route path="/" element={<Dashboard user={user} />} />
-          <Route path="/citizens" element={<Citizens />} />
-          <Route path="/payments" element={<Payments />} />
+          <Route path="/citizens" element={<Citizens user={user} />} />
+          <Route path="/payments" element={<Payments user={user} />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

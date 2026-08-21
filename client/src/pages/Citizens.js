@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import api, { formatMoney } from '../api';
 import { useI18n, apiError, formatDate } from '../i18n';
 
@@ -9,12 +10,14 @@ const emptyForm = {
   ics_serial: '', registration_date: '', address: '', place: '', notes: '',
 };
 
-export default function Citizens() {
+export default function Citizens({ user }) {
   const { t } = useI18n();
   const [citizens, setCitizens] = useState([]);
   const [search, setSearch] = useState('');
   const [place, setPlace] = useState('');
   const [places, setPlaces] = useState([]);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -23,11 +26,15 @@ export default function Citizens() {
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState('');
   const [deleting, setDeleting] = useState(null);
+  const [selected, setSelected] = useState(new Set());
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
   const navigate = useNavigate();
+
+  const isViewer = user?.role === 'viewer';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +54,53 @@ export default function Citizens() {
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
   }, [load]);
+
+  const filteredCitizens = citizens.filter((c) => {
+    if (dateFrom && c.registration_date && c.registration_date < dateFrom) return false;
+    if (dateTo && c.registration_date && c.registration_date > dateTo) return false;
+    return true;
+  });
+
+  const toggleSelect = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === filteredCitizens.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filteredCitizens.map((c) => c.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(t('cit.bulkDeleteConfirm').replace('{count}', selected.size))) return;
+    try {
+      await api.post('/citizens/bulk-delete', { ids: [...selected] });
+      setSelected(new Set());
+      load();
+    } catch (err) {
+      setError(apiError(err));
+    }
+  };
+
+  const exportExcel = () => {
+    const data = filteredCitizens.map((c) => ({
+      Name: c.name, 'ID Number': c.id_number, Phone: c.phone || '', Gender: c.gender || '',
+      Place: c.place || '', Village: c.village || '', District: c.district || '',
+      Sector: c.sector || '', Cell: c.cell || '', Address: c.address || '',
+      Notes: c.notes || '', 'Registration Date': c.registration_date || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Citizens');
+    XLSX.writeFile(wb, `citizens-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
 
   const openAdd = () => {
     setEditing(null);
@@ -108,14 +162,71 @@ export default function Citizens() {
     }
   };
 
+  const handleFileSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImportFile(file);
+    setImportResult(null);
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    let rows = [];
+    if (ext === 'csv') {
+      const text = await file.text();
+      const lines = text.split('\n').filter((l) => l.trim());
+      if (lines.length < 2) { setImportPreview({ rows: [], error: 'File has no data rows.' }); return; }
+      const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+      const nameIdx = headers.findIndex((h) => h === 'name');
+      const idIdx = headers.findIndex((h) => h === 'id_number' || h === 'id number' || h === 'id');
+      if (nameIdx === -1 || idIdx === -1) { setImportPreview({ rows: [], error: 'CSV must have "name" and "id_number" columns.' }); return; }
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map((c) => c.trim());
+        rows.push({ line: i + 1, name: cols[nameIdx] || '', idNumber: cols[idIdx] || '' });
+      }
+    } else {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data);
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet);
+      for (let i = 0; i < json.length; i++) {
+        const r = json[i];
+        rows.push({ line: i + 2, name: r.name || r.Name || '', idNumber: r.id_number || r['ID Number'] || r.ID || '' });
+      }
+    }
+
+    const existingIds = new Set(citizens.map((c) => c.id_number.toLowerCase()));
+    const preview = rows.map((r) => {
+      const isEmpty = !r.name || !r.idNumber;
+      const isDuplicate = !isEmpty && existingIds.has(r.idNumber.toLowerCase());
+      return { ...r, status: isEmpty ? 'empty' : isDuplicate ? 'duplicate' : 'ok' };
+    });
+    setImportPreview({ rows: preview });
+  };
+
   const handleImport = async () => {
     if (!importFile) return;
     setImporting(true);
     setImportResult(null);
     try {
-      const text = await importFile.text();
-      const { data } = await api.post('/citizens/import', { csv: text });
+      const ext = importFile.name.split('.').pop().toLowerCase();
+      let csvText;
+      if (ext === 'csv') {
+        csvText = await importFile.text();
+      } else {
+        const data = await importFile.arrayBuffer();
+        const wb = XLSX.read(data);
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+        const lines = ['name,id_number,phone,gender,place,village,district,sector,cell,address,notes'];
+        json.forEach((r) => {
+          const row = [r.name || '', r.id_number || r['ID Number'] || r.ID || '', r.phone || '', r.gender || '', r.place || '', r.village || '', r.district || '', r.sector || '', r.cell || '', r.address || '', r.notes || ''].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+          lines.push(row);
+        });
+        csvText = lines.join('\n');
+      }
+      const { data } = await api.post('/citizens/import', { csv: csvText });
       setImportResult(data);
+      setImportPreview(null);
+      setImportFile(null);
       load();
     } catch (err) {
       setImportResult({ error: apiError(err) });
@@ -131,28 +242,37 @@ export default function Citizens() {
           <h2 className="mb-0">{t('cit.title')}</h2>
           <p className="text-muted mb-0">{t('cit.subtitle')}</p>
         </div>
-        <button className="btn btn-primary btn-lg" onClick={openAdd}>{t('cit.add')}</button>
-        <button className="btn btn-outline-secondary btn-lg" onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); }}>{t('cit.import')}</button>
+        <div className="d-flex flex-wrap gap-2">
+          {!isViewer && <button className="btn btn-primary btn-lg" onClick={openAdd}>{t('cit.add')}</button>}
+          {!isViewer && <button className="btn btn-outline-secondary btn-lg" onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); setImportPreview(null); }}>{t('cit.import')}</button>}
+          <button className="btn btn-outline-secondary btn-lg" onClick={exportExcel}>⬇️ {t('cit.exportCsv')}</button>
+          {selected.size > 0 && !isViewer && (
+            <button className="btn btn-danger btn-lg" onClick={handleBulkDelete}>
+              🗑️ {t('cit.bulkDelete')} ({selected.size})
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="kr-card mb-3 p-3">
         <div className="row g-2 align-items-center">
-          <div className="col-md-6">
-            <input
-              className="form-control"
-              placeholder={t('cit.search')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <div className="col-md-4">
+            <input className="form-control" placeholder={t('cit.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <div className="col-md-3">
+          <div className="col-md-2">
             <select className="form-select" value={place} onChange={(e) => setPlace(e.target.value)}>
               <option value="">{t('cit.allPlaces')}</option>
               {places.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
-          <div className="col-md-3 text-md-end">
-            <span className="text-muted small">{citizens.length} {t('cit.count')}</span>
+          <div className="col-md-2">
+            <input type="date" className="form-control" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} placeholder={t('cit.dateFrom')} />
+          </div>
+          <div className="col-md-2">
+            <input type="date" className="form-control" value={dateTo} onChange={(e) => setDateTo(e.target.value)} placeholder={t('cit.dateTo')} />
+          </div>
+          <div className="col-md-2 text-md-end">
+            <span className="text-muted small">{filteredCitizens.length} {t('cit.count')}</span>
           </div>
         </div>
       </div>
@@ -161,7 +281,7 @@ export default function Citizens() {
 
       {loading ? (
         <p className="text-muted">{t('common.loading')}</p>
-      ) : citizens.length === 0 ? (
+      ) : filteredCitizens.length === 0 ? (
         <div className="empty-state">
           {t('cit.empty')} <strong>+ {t('cit.add')}</strong> {t('cit.emptyCta')}
         </div>
@@ -171,6 +291,9 @@ export default function Citizens() {
             <table className="table table-hover align-middle mb-0">
               <thead>
                 <tr>
+                  {!isViewer && <th style={{ width: 40 }}>
+                    <input type="checkbox" className="form-check-input" checked={selected.size === filteredCitizens.length && filteredCitizens.length > 0} onChange={toggleSelectAll} />
+                  </th>}
                   <th>{t('cit.thName')}</th>
                   <th>{t('cit.thGender')}</th>
                   <th>{t('cit.thId')}</th>
@@ -184,10 +307,13 @@ export default function Citizens() {
                 </tr>
               </thead>
               <tbody>
-                {citizens.map((c) => {
+                {filteredCitizens.map((c) => {
                   const paid = (c.payment_count || 0) > 0;
                   return (
                     <tr key={c.id}>
+                      {!isViewer && <td>
+                        <input type="checkbox" className="form-check-input" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} />
+                      </td>}
                       <td className="fw-semibold">{c.name}</td>
                       <td>{c.gender || '—'}</td>
                       <td>{c.id_number}</td>
@@ -206,14 +332,16 @@ export default function Citizens() {
                           onClick={() => navigate(`/payments?citizen=${c.id}`)}>
                           💵
                         </button>
-                        <button className="btn-icon me-1" title={t('cit.editModalTitle')}
-                          onClick={() => openEdit(c)}>
-                          ✏️
-                        </button>
-                        <button className="btn-icon" title={t('cit.deleteTitle')}
-                          onClick={() => setDeleting(c)}>
-                          🗑️
-                        </button>
+                        {!isViewer && <>
+                          <button className="btn-icon me-1" title={t('cit.editModalTitle')}
+                            onClick={() => openEdit(c)}>
+                            ✏️
+                          </button>
+                          <button className="btn-icon" title={t('cit.deleteTitle')}
+                            onClick={() => setDeleting(c)}>
+                            🗑️
+                          </button>
+                        </>}
                       </td>
                     </tr>
                   );
@@ -238,30 +366,24 @@ export default function Citizens() {
                   <div className="row g-3">
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.name')} *</label>
-                      <input className="form-control" value={form.name} required
-                        onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                      <input className="form-control" value={form.name} required onChange={(e) => setForm({ ...form, name: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.id')} *</label>
-                      <input className="form-control" value={form.id_number} required
-                        onChange={(e) => setForm({ ...form, id_number: e.target.value })} />
+                      <input className="form-control" value={form.id_number} required onChange={(e) => setForm({ ...form, id_number: e.target.value })} />
                       <div className="form-text">{t('cit.idHint')}</div>
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.phone')}</label>
-                      <input className="form-control" value={form.phone}
-                        onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                      <input className="form-control" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.place')}</label>
-                      <input className="form-control" value={form.place}
-                        placeholder={t('cit.placeExample')}
-                        onChange={(e) => setForm({ ...form, place: e.target.value })} />
+                      <input className="form-control" value={form.place} placeholder={t('cit.placeExample')} onChange={(e) => setForm({ ...form, place: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.gender')}</label>
-                      <select className="form-select" value={form.gender}
-                        onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+                      <select className="form-select" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
                         <option value="">—</option>
                         <option value="M">{t('cit.genderM')}</option>
                         <option value="F">{t('cit.genderF')}</option>
@@ -269,65 +391,52 @@ export default function Citizens() {
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.regDate')}</label>
-                      <input type="date" className="form-control" value={form.registration_date}
-                        onChange={(e) => setForm({ ...form, registration_date: e.target.value })} />
+                      <input type="date" className="form-control" value={form.registration_date} onChange={(e) => setForm({ ...form, registration_date: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.spouseName')}</label>
-                      <input className="form-control" value={form.spouse_name}
-                        onChange={(e) => setForm({ ...form, spouse_name: e.target.value })} />
+                      <input className="form-control" value={form.spouse_name} onChange={(e) => setForm({ ...form, spouse_name: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.spouseId')}</label>
-                      <input className="form-control" value={form.spouse_id}
-                        onChange={(e) => setForm({ ...form, spouse_id: e.target.value })} />
+                      <input className="form-control" value={form.spouse_id} onChange={(e) => setForm({ ...form, spouse_id: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.numPersons')}</label>
-                      <input type="number" min="0" className="form-control" value={form.num_other_persons}
-                        onChange={(e) => setForm({ ...form, num_other_persons: e.target.value })} />
+                      <input type="number" min="0" className="form-control" value={form.num_other_persons} onChange={(e) => setForm({ ...form, num_other_persons: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.icsSerial')}</label>
-                      <input className="form-control" value={form.ics_serial}
-                        onChange={(e) => setForm({ ...form, ics_serial: e.target.value })} />
+                      <input className="form-control" value={form.ics_serial} onChange={(e) => setForm({ ...form, ics_serial: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.district')}</label>
-                      <input className="form-control" value={form.district}
-                        onChange={(e) => setForm({ ...form, district: e.target.value })} />
+                      <input className="form-control" value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.sector')}</label>
-                      <input className="form-control" value={form.sector}
-                        onChange={(e) => setForm({ ...form, sector: e.target.value })} />
+                      <input className="form-control" value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.cell')}</label>
-                      <input className="form-control" value={form.cell}
-                        onChange={(e) => setForm({ ...form, cell: e.target.value })} />
+                      <input className="form-control" value={form.cell} onChange={(e) => setForm({ ...form, cell: e.target.value })} />
                     </div>
                     <div className="col-md-6">
                       <label className="form-label">{t('cit.village')}</label>
-                      <input className="form-control" value={form.village}
-                        onChange={(e) => setForm({ ...form, village: e.target.value })} />
+                      <input className="form-control" value={form.village} onChange={(e) => setForm({ ...form, village: e.target.value })} />
                     </div>
                     <div className="col-12">
                       <label className="form-label">{t('cit.address')}</label>
-                      <input className="form-control" value={form.address}
-                        onChange={(e) => setForm({ ...form, address: e.target.value })} />
+                      <input className="form-control" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
                     </div>
                     <div className="col-12">
                       <label className="form-label">{t('cit.notes')}</label>
-                      <textarea className="form-control" rows="2" value={form.notes}
-                        onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+                      <textarea className="form-control" rows="2" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <button type="button" className="btn btn-outline-secondary" onClick={() => setShowModal(false)}>
-                    {t('cit.cancel')}
-                  </button>
+                  <button type="button" className="btn btn-outline-secondary" onClick={() => setShowModal(false)}>{t('cit.cancel')}</button>
                   <button type="submit" className="btn btn-primary px-4" disabled={saving}>
                     {saving ? t('cit.saving') : editing ? t('cit.saveEdit') : t('cit.saveAdd')}
                   </button>
@@ -340,44 +449,64 @@ export default function Citizens() {
 
       {showImport && (
         <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay)' }}>
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-lg modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">{t('cit.importTitle')}</h5>
-                <button type="button" className="btn-close" onClick={() => setShowImport(false)}></button>
+                <button type="button" className="btn-close" onClick={() => { setShowImport(false); setImportPreview(null); }}></button>
               </div>
               <div className="modal-body">
                 <p className="text-muted small mb-3">{t('cit.importHint')}</p>
                 {importResult && !importResult.error && (
                   <div className="alert alert-success py-2">
-                    {t('cit.importResult')
-                      .replace('{imported}', importResult.imported)
-                      .replace('{skipped}', importResult.skipped)
-                      .replace('{total}', importResult.total)}
+                    {t('cit.importResult').replace('{imported}', importResult.imported).replace('{skipped}', importResult.skipped).replace('{total}', importResult.total)}
                   </div>
                 )}
                 {importResult && importResult.error && (
                   <div className="alert alert-danger py-2">{importResult.error}</div>
                 )}
-                <input
-                  type="file"
-                  className="form-control"
-                  accept=".csv"
-                  onChange={(e) => setImportFile(e.target.files[0])}
-                />
+                {importPreview && importPreview.error && (
+                  <div className="alert alert-danger py-2">{importPreview.error}</div>
+                )}
+                {importPreview && importPreview.rows && importPreview.rows.length > 0 && (
+                  <div className="mb-3">
+                    <div className="d-flex gap-3 mb-2">
+                      <span className="badge badge-paid">{t('cit.importRowsOk').replace('{count}', importPreview.rows.filter((r) => r.status === 'ok').length)}</span>
+                      <span className="badge badge-unpaid">{t('cit.importRowsSkip').replace('{count}', importPreview.rows.filter((r) => r.status !== 'ok').length)}</span>
+                    </div>
+                    <div className="table-responsive" style={{ maxHeight: 300 }}>
+                      <table className="table table-sm mb-0">
+                        <thead>
+                          <tr><th>#</th><th>{t('cit.name')}</th><th>{t('cit.id')}</th><th>{t('cit.thStatus')}</th></tr>
+                        </thead>
+                        <tbody>
+                          {importPreview.rows.slice(0, 50).map((r) => (
+                            <tr key={r.line}>
+                              <td>{r.line}</td>
+                              <td>{r.name}</td>
+                              <td>{r.idNumber}</td>
+                              <td>
+                                {r.status === 'ok' && <span className="badge badge-paid">{t('cit.paid')}</span>}
+                                {r.status === 'duplicate' && <span className="badge badge-unpaid">{t('cit.dup').split(' ')[0]}</span>}
+                                {r.status === 'empty' && <span className="badge bg-secondary">Empty</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {importPreview.rows.length > 50 && <p className="text-muted small mt-2">...and {importPreview.rows.length - 50} more rows</p>}
+                  </div>
+                )}
+                <input type="file" className="form-control" accept=".csv,.xlsx,.xls" onChange={handleFileSelect} />
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline-secondary" onClick={() => setShowImport(false)}>
-                  {t('cit.cancel')}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary px-4"
-                  disabled={!importFile || importing}
-                  onClick={handleImport}
-                >
-                  {importing ? t('cit.importing') : t('cit.import')}
-                </button>
+                <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowImport(false); setImportPreview(null); }}>{t('cit.importCancel')}</button>
+                {importPreview && importPreview.rows && (
+                  <button type="button" className="btn btn-primary px-4" disabled={!importFile || importing || importPreview.rows.filter((r) => r.status === 'ok').length === 0} onClick={handleImport}>
+                    {importing ? t('cit.importing') : t('cit.importProceed')}
+                  </button>
+                )}
               </div>
             </div>
           </div>
