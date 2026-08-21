@@ -209,20 +209,43 @@ export default function Citizens({ user }) {
       const data = await file.arrayBuffer();
       const wb = XLSX.read(data);
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet);
-      if (json.length === 0) { setImportPreview({ rows: [], error: 'Excel file is empty.' }); return; }
-      headers = Object.keys(json[0]);
-      nameIdx = headers.findIndex((h) => fuzzyMatchCol(h, nameVariants));
-      idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
-      if (nameIdx === -1 || idIdx === -1) {
-        setImportPreview({ rows: [], error: `Could not find name/ID columns. Found: ${headers.join(', ')}. Please use "name" and "id_number" as column headers.` });
-        return;
+      // Read raw rows to handle files with no headers or merged first rows
+      const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      if (rawRows.length === 0) { setImportPreview({ rows: [], error: 'Excel file is empty.' }); return; }
+
+      // Scan first 5 rows for one that has actual text headers (not __EMPTY)
+      let headerRowIdx = -1;
+      for (let ri = 0; ri < Math.min(5, rawRows.length); ri++) {
+        const cells = rawRows[ri] || [];
+        const hasRealHeaders = cells.some((c) => c && typeof c === 'string' && !c.startsWith('__EMPTY'));
+        if (hasRealHeaders && cells.length >= 2) { headerRowIdx = ri; break; }
       }
-      for (let i = 0; i < json.length; i++) {
-        const r = json[i];
-        const nameVal = json[i][headers[nameIdx]] || '';
-        const idVal = json[i][headers[idIdx]] || '';
-        rows.push({ line: i + 2, name: String(nameVal).trim(), idNumber: String(idVal).trim() });
+
+      if (headerRowIdx > -1) {
+        // Found headers
+        headers = rawRows[headerRowIdx].map((h) => String(h || '').trim());
+        nameIdx = headers.findIndex((h) => fuzzyMatchCol(h, nameVariants));
+        idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
+        if (nameIdx === -1 || idIdx === -1) {
+          setImportPreview({ rows: [], error: `Could not find name/ID columns. Found: ${headers.join(', ')}. Please use "name" and "id_number" as column headers.` });
+          return;
+        }
+        for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
+          const r = rawRows[i] || [];
+          if (r.length === 0 || r.every((c) => !c && c !== 0)) continue;
+          rows.push({ line: i + 1, name: String(r[nameIdx] || '').trim(), idNumber: String(r[idIdx] || '').trim() });
+        }
+      } else {
+        // No headers found — treat ALL rows as data, auto-map by position (col 0 = name, col 1 = id)
+        if (rawRows[0].length < 2) { setImportPreview({ rows: [], error: 'Excel file needs at least 2 columns.' }); return; }
+        nameIdx = 0;
+        idIdx = 1;
+        headers = rawRows[0].map((_, i) => `Column ${i + 1}`);
+        for (let i = 0; i < rawRows.length; i++) {
+          const r = rawRows[i] || [];
+          if (r.length === 0 || r.every((c) => !c && c !== 0)) continue;
+          rows.push({ line: i + 1, name: String(r[nameIdx] || '').trim(), idNumber: String(r[idIdx] || '').trim() });
+        }
       }
     }
 
@@ -253,19 +276,40 @@ export default function Citizens({ user }) {
         const data = await importFile.arrayBuffer();
         const wb = XLSX.read(data);
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet);
-        if (json.length === 0) { setImportResult({ error: 'Excel file is empty.' }); return; }
-        const allKeys = Object.keys(json[0]);
-        const nIdx = allKeys.findIndex((h) => fuzzyMatchCol(h, nameVariants));
-        const iIdx = allKeys.findIndex((h) => fuzzyMatchCol(h, idVariants));
-        const nameHeader = nIdx > -1 ? allKeys[nIdx] : 'name';
-        const idHeader = iIdx > -1 ? allKeys[iIdx] : 'id_number';
-        const lines = [allKeys.join(',')];
-        json.forEach((r) => {
-          const row = allKeys.map((k) => `"${String(r[k] || '').replace(/"/g, '""')}"`).join(',');
-          lines.push(row);
-        });
-        csvText = lines.join('\n');
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (rawRows.length === 0) { setImportResult({ error: 'Excel file is empty.' }); return; }
+
+        // Scan first 5 rows for real headers
+        let headerRowIdx = -1;
+        for (let ri = 0; ri < Math.min(5, rawRows.length); ri++) {
+          const cells = rawRows[ri] || [];
+          const hasRealHeaders = cells.some((c) => c && typeof c === 'string' && !c.startsWith('__EMPTY'));
+          if (hasRealHeaders && cells.length >= 2) { headerRowIdx = ri; break; }
+        }
+
+        if (headerRowIdx > -1) {
+          const hdrs = rawRows[headerRowIdx].map((h) => String(h || '').trim());
+          const lines = [hdrs.join(',')];
+          for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
+            const r = rawRows[i] || [];
+            if (r.length === 0 || r.every((c) => !c && c !== 0)) continue;
+            lines.push(hdrs.map((_, ci) => `"${String(r[ci] || '').replace(/"/g, '""')}"`).join(','));
+          }
+          csvText = lines.join('\n');
+        } else {
+          // No headers — auto-map: add generic headers, then data rows
+          const numCols = Math.max(...rawRows.map((r) => (r || []).length));
+          const hdrs = Array.from({ length: numCols }, (_, i) => `col_${i + 1}`);
+          hdrs[0] = 'name';
+          if (numCols > 1) hdrs[1] = 'id_number';
+          const lines = [hdrs.join(',')];
+          for (let i = 0; i < rawRows.length; i++) {
+            const r = rawRows[i] || [];
+            if (r.length === 0 || r.every((c) => !c && c !== 0)) continue;
+            lines.push(Array.from({ length: numCols }, (_, ci) => `"${String(r[ci] || '').replace(/"/g, '""')}"`).join(','));
+          }
+          csvText = lines.join('\n');
+        }
       }
       const { data } = await api.post('/citizens/import', { csv: csvText });
       setImportResult(data);

@@ -175,30 +175,61 @@ export default function Payments({ user }) {
       const data = await file.arrayBuffer();
       const wb = XLSX.read(data);
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet);
-      if (json.length === 0) { setImportPreview({ rows: [], error: 'Excel file is empty.' }); return; }
-      headers = Object.keys(json[0]);
-      idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
-      amtIdx = headers.findIndex((h) => fuzzyMatchCol(h, amtVariants));
-      if (idIdx === -1 || amtIdx === -1) {
-        setImportPreview({ rows: [], error: `Could not find ID/amount columns. Found: ${headers.join(', ')}. Please use "id_number" and "amount" as column headers.` });
-        return;
+      const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      if (rawRows.length === 0) { setImportPreview({ rows: [], error: 'Excel file is empty.' }); return; }
+
+      // Scan first 5 rows for real headers
+      let headerRowIdx = -1;
+      for (let ri = 0; ri < Math.min(5, rawRows.length); ri++) {
+        const cells = rawRows[ri] || [];
+        const hasRealHeaders = cells.some((c) => c && typeof c === 'string' && !c.startsWith('__EMPTY'));
+        if (hasRealHeaders && cells.length >= 2) { headerRowIdx = ri; break; }
       }
-      const dateIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['payment_date', 'date', 'date paiement', 'date de paiement']));
-      const placeIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['place', 'lieu', 'location']));
-      const methodIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['method', 'méthode', 'mode']));
-      const notesIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['notes', 'remarques', 'observation']));
-      for (let i = 0; i < json.length; i++) {
-        const r = json[i];
-        rows.push({
-          line: i + 2,
-          idNumber: idIdx > -1 ? String(r[headers[idIdx]] || '').trim() : '',
-          amount: amtIdx > -1 ? String(r[headers[amtIdx]] || '').trim() : '',
-          payment_date: dateIdx > -1 ? String(r[headers[dateIdx]] || '').trim() : '',
-          place: placeIdx > -1 ? String(r[headers[placeIdx]] || '').trim() : '',
-          method: methodIdx > -1 ? String(r[headers[methodIdx]] || '').trim() : '',
-          notes: notesIdx > -1 ? String(r[headers[notesIdx]] || '').trim() : '',
-        });
+
+      if (headerRowIdx > -1) {
+        headers = rawRows[headerRowIdx].map((h) => String(h || '').trim());
+        idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
+        amtIdx = headers.findIndex((h) => fuzzyMatchCol(h, amtVariants));
+        if (idIdx === -1 || amtIdx === -1) {
+          setImportPreview({ rows: [], error: `Could not find ID/amount columns. Found: ${headers.join(', ')}. Please use "id_number" and "amount" as column headers.` });
+          return;
+        }
+        const dateIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['payment_date', 'date', 'date paiement', 'date de paiement']));
+        const placeIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['place', 'lieu', 'location']));
+        const methodIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['method', 'méthode', 'mode']));
+        const notesIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['notes', 'remarques', 'observation']));
+        for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
+          const r = rawRows[i] || [];
+          if (r.length === 0 || r.every((c) => !c && c !== 0)) continue;
+          rows.push({
+            line: i + 1,
+            idNumber: idIdx > -1 ? String(r[idIdx] || '').trim() : '',
+            amount: amtIdx > -1 ? String(r[amtIdx] || '').trim() : '',
+            payment_date: dateIdx > -1 ? String(r[dateIdx] || '').trim() : '',
+            place: placeIdx > -1 ? String(r[placeIdx] || '').trim() : '',
+            method: methodIdx > -1 ? String(r[methodIdx] || '').trim() : '',
+            notes: notesIdx > -1 ? String(r[notesIdx] || '').trim() : '',
+          });
+        }
+      } else {
+        // No headers — auto-map: col 0 = id_number, col 1 = amount
+        const numCols = Math.max(...rawRows.map((r) => (r || []).length));
+        headers = Array.from({ length: numCols }, (_, i) => `col_${i + 1}`);
+        idIdx = 0;
+        amtIdx = numCols > 1 ? 1 : -1;
+        for (let i = 0; i < rawRows.length; i++) {
+          const r = rawRows[i] || [];
+          if (r.length === 0 || r.every((c) => !c && c !== 0)) continue;
+          rows.push({
+            line: i + 1,
+            idNumber: String(r[0] || '').trim(),
+            amount: String(r[1] || '').trim(),
+            payment_date: numCols > 2 ? String(r[2] || '').trim() : '',
+            place: numCols > 3 ? String(r[3] || '').trim() : '',
+            method: numCols > 4 ? String(r[4] || '').trim() : '',
+            notes: numCols > 5 ? String(r[5] || '').trim() : '',
+          });
+        }
       }
     }
 
@@ -232,15 +263,38 @@ export default function Payments({ user }) {
         const data = await importFile.arrayBuffer();
         const wb = XLSX.read(data);
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet);
-        if (json.length === 0) { setImportResult({ error: 'Excel file is empty.' }); return; }
-        const allKeys = Object.keys(json[0]);
-        const lines = [allKeys.join(',')];
-        json.forEach((r) => {
-          const row = allKeys.map((k) => `"${String(r[k] || '').replace(/"/g, '""')}"`).join(',');
-          lines.push(row);
-        });
-        csvText = lines.join('\n');
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (rawRows.length === 0) { setImportResult({ error: 'Excel file is empty.' }); return; }
+
+        let headerRowIdx = -1;
+        for (let ri = 0; ri < Math.min(5, rawRows.length); ri++) {
+          const cells = rawRows[ri] || [];
+          const hasRealHeaders = cells.some((c) => c && typeof c === 'string' && !c.startsWith('__EMPTY'));
+          if (hasRealHeaders && cells.length >= 2) { headerRowIdx = ri; break; }
+        }
+
+        if (headerRowIdx > -1) {
+          const hdrs = rawRows[headerRowIdx].map((h) => String(h || '').trim());
+          const lines = [hdrs.join(',')];
+          for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
+            const r = rawRows[i] || [];
+            if (r.length === 0 || r.every((c) => !c && c !== 0)) continue;
+            lines.push(hdrs.map((_, ci) => `"${String(r[ci] || '').replace(/"/g, '""')}"`).join(','));
+          }
+          csvText = lines.join('\n');
+        } else {
+          const numCols = Math.max(...rawRows.map((r) => (r || []).length));
+          const hdrs = Array.from({ length: numCols }, (_, i) => `col_${i + 1}`);
+          hdrs[0] = 'id_number';
+          if (numCols > 1) hdrs[1] = 'amount';
+          const lines = [hdrs.join(',')];
+          for (let i = 0; i < rawRows.length; i++) {
+            const r = rawRows[i] || [];
+            if (r.length === 0 || r.every((c) => !c && c !== 0)) continue;
+            lines.push(Array.from({ length: numCols }, (_, ci) => `"${String(r[ci] || '').replace(/"/g, '""')}"`).join(','));
+          }
+          csvText = lines.join('\n');
+        }
       }
       const { data } = await api.post('/payments/import', { csv: csvText });
       setImportResult(data);
