@@ -152,7 +152,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Import citizens from CSV/Excel. Fast bulk import. Accepts ANY file.
+// Import citizens from CSV/Excel. Accepts ANY file — works with or without name/id columns.
 router.post('/import', async (req, res) => {
   try {
     if (!req.body || !req.body.csv) {
@@ -169,41 +169,52 @@ router.post('/import', async (req, res) => {
       return res.json({ imported: 0, updated: 0, skipped: 0, total: 0, newColumns: [] });
     }
 
-    // Columns that need non-text types (NULL instead of '' for empty values)
-    const intCols = new Set(['num_other_persons']);
-    const dateCols = new Set(['registration_date']);
+    // --- Normalize a header: lowercase, collapse whitespace, strip accents ---
+    const normH = (h) => h.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 
-    const nameMap = {
-      name: 'name', 'full name': 'name', nom: 'name', 'nom complet': 'name',
-      'citizen name': 'name', 'citizen_name': 'name', iname: 'name',
+    // --- Fuzzy header matching ---
+    // Combined map: normalized header → DB column name
+    const known = {
+      // name
+      'name': 'name', 'full name': 'name', 'nom': 'name', 'nom complet': 'name',
+      'citizen name': 'name', 'citizen_name': 'name', 'iname': 'name',
       'head of hh': 'name', 'head of household': 'name', 'name of head of hh': 'name',
-      'name of head': 'name', head: 'name', chef: 'name', household: 'name',
-    };
-    const idMap = {
-      id_number: 'id_number', 'id number': 'id_number', id: 'id_number',
-      'id no': 'id_number', 'id no.': 'id_number', nid: 'id_number', nin: 'id_number',
-      identification: 'id_number', identity: 'id_number',
-      'citizen_id': 'id_number', 'citizen id': 'id_number',
-    };
-    const fieldMap = {
-      phone: 'phone', telephone: 'phone', tel: 'phone', 'phone number': 'phone',
-      gender: 'gender', genre: 'gender', sexe: 'gender', 'gender (m/f)': 'gender',
-      spouse_name: 'spouse_name', 'spouse name': 'spouse_name', 'nom du conjoint': 'spouse_name',
-      spouse_id: 'spouse_id', 'spouse id': 'spouse_id',
-      num_other_persons: 'num_other_persons', 'num other persons': 'num_other_persons',
+      'name of head': 'name', 'head': 'name', 'chef': 'name', 'household': 'name',
+      // id
+      'id_number': 'id_number', 'id number': 'id_number', 'id': 'id_number',
+      'id no': 'id_number', 'id no.': 'id_number', 'nid': 'id_number', 'nin': 'id_number',
+      'identification': 'id_number', 'identity': 'id_number',
+      'citizen id': 'id_number',
+      // phone
+      'phone': 'phone', 'telephone': 'phone', 'tel': 'phone', 'phone number': 'phone',
+      // gender
+      'gender': 'gender', 'genre': 'gender', 'sexe': 'gender', 'gender m f': 'gender',
+      'gender (m/f)': 'gender',
+      // spouse
+      'spouse name': 'spouse_name', 'spouse_name': 'spouse_name', 'nom du conjoint': 'spouse_name',
+      'spouse id': 'spouse_id', 'spouse_id': 'spouse_id',
+      // num_other_persons
+      'num other persons': 'num_other_persons', 'num_other_persons': 'num_other_persons',
       'number of other persons in hh': 'num_other_persons',
       'number of other persons': 'num_other_persons',
-      district: 'district', secteur: 'district', sector: 'sector',
-      cell: 'cell', cellule: 'cell', village: 'village',
-      ics_serial: 'ics_serial', 'ics serial': 'ics_serial', icsserilnumber: 'ics_serial',
+      'nombre personnes': 'num_other_persons', 'persons': 'num_other_persons',
+      // location
+      'district': 'district', 'secteur': 'district', 'sector': 'sector',
+      'cell': 'cell', 'cellule': 'cell', 'village': 'village',
+      // ics
+      'ics serial': 'ics_serial', 'ics_serial': 'ics_serial', 'icsserilnumber': 'ics_serial',
       'serial number': 'ics_serial',
-      registration_date: 'registration_date', 'registration date': 'registration_date',
-      date: 'registration_date',
-      address: 'address', adresse: 'address',
-      place: 'place', lieu: 'place', location: 'place',
-      notes: 'notes', remarques: 'notes', observation: 'notes',
+      // date
+      'registration date': 'registration_date', 'registration_date': 'registration_date',
+      'date enregistrement': 'registration_date', 'date inscription': 'registration_date',
+      'date': 'registration_date',
+      // other
+      'address': 'address', 'adresse': 'address',
+      'place': 'place', 'lieu': 'place', 'location': 'place',
+      'notes': 'notes', 'remarques': 'notes', 'observation': 'notes',
     };
 
+    // --- Build headerMap (original header → DB column) ---
     const allHeaders = new Set();
     results.forEach((row) => Object.keys(row).forEach((k) => allHeaders.add(k)));
 
@@ -213,29 +224,34 @@ router.post('/import', async (req, res) => {
     const existingCols = new Set(colRows.map((r) => r.column_name));
 
     const headerMap = {};
+    for (const header of allHeaders) {
+      const n = normH(header);
+      headerMap[header] = known[n] || n.replace(/[^a-z0-9_]/g, '_');
+    }
+
+    // --- Create new columns if needed ---
     const newColumns = [];
     for (const header of allHeaders) {
-      const n = header.toLowerCase().trim();
-      let mapped = nameMap[n] || idMap[n] || fieldMap[n] || n.replace(/[^a-z0-9_]/g, '_');
-      headerMap[header] = mapped;
+      const mapped = headerMap[header];
       if (!existingCols.has(mapped) && !['name', 'id_number', 'id'].includes(mapped)) {
         newColumns.push(mapped);
       }
     }
-
     for (const col of [...new Set(newColumns)]) {
       try {
         await pool.query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS "${col}" TEXT`);
-      } catch (e) {
-        console.warn(`Could not add column ${col}:`, e.message);
-      }
+      } catch (e) { /* ignore */ }
     }
 
+    // Refresh column list
     const { rows: colRows2 } = await pool.query(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = 'citizens'"
+      "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'citizens'"
     );
     const finalCols = new Set(colRows2.map((r) => r.column_name));
+    const intCols = new Set(colRows2.filter((r) => r.data_type === 'integer').map((r) => r.column_name));
+    const dateCols = new Set(colRows2.filter((r) => r.data_type === 'date').map((r) => r.column_name));
 
+    // --- Helper: get value from a row for a target DB column ---
     const getVal = (row, target) => {
       for (const [key, val] of Object.entries(row)) {
         if (headerMap[key] === target) return String(val || '').trim();
@@ -243,31 +259,39 @@ router.post('/import', async (req, res) => {
       return '';
     };
 
-    // Convert a raw string value to the proper type for the DB column
-    const toTypedVal = (rawVal, dbCol) => {
-      if (!rawVal) return null;
+    // --- Helper: convert raw value to proper type ---
+    const toTyped = (raw, dbCol) => {
+      if (!raw) return null;
       if (intCols.has(dbCol)) {
-        const n = parseInt(rawVal, 10);
+        const n = parseInt(String(raw).replace(/[^\d-]/g, ''), 10);
         return isNaN(n) ? null : n;
       }
-      if (dateCols.has(dbCol)) {
-        // Accept YYYY-MM-DD or similar
-        return rawVal || null;
-      }
-      return rawVal;
+      if (dateCols.has(dbCol)) return raw || null;
+      return raw;
     };
 
+    // --- Normalize every row ---
     const normRows = results.map((row, idx) => {
       let name = getVal(row, 'name');
       let id_number = getVal(row, 'id_number');
+      // Fallback: first two columns if name/id not found
       const vals = Object.values(row);
       if (!name && vals.length > 0) name = String(vals[0] || '').trim();
       if (!id_number && vals.length > 1) id_number = String(vals[1] || '').trim();
-      if (!id_number) id_number = 'ROW_' + (idx + 1);
-      return { row, name: name || '', id_number };
+      // Auto-generate id_number if completely missing
+      if (!id_number) id_number = 'AUTO_' + Date.now() + '_' + (idx + 1);
+      return { row, name: name || 'Unknown', id_number };
     });
 
-    const uniqueIds = [...new Set(normRows.map((r) => r.id_number.toLowerCase()))].filter(Boolean);
+    // --- Deduplicate by id_number (keep last occurrence) ---
+    const deduped = new Map();
+    for (const nr of normRows) {
+      deduped.set(nr.id_number.toLowerCase(), nr);
+    }
+    const uniqueRows = [...deduped.values()];
+
+    // --- Check which IDs already exist in DB ---
+    const uniqueIds = [...new Set(uniqueRows.map((r) => r.id_number.toLowerCase()))].filter(Boolean);
     const existingMap = new Set();
     for (let i = 0; i < uniqueIds.length; i += 500) {
       const batch = uniqueIds.slice(i, i + 500);
@@ -278,31 +302,40 @@ router.post('/import', async (req, res) => {
       rows.forEach((r) => existingMap.add(r.id));
     }
 
-    const toInsert = [];
-    const toUpdate = [];
+    // --- Build column values for each row ---
+    const dbFields = ['phone', 'gender', 'spouse_name', 'spouse_id', 'num_other_persons',
+      'district', 'sector', 'cell', 'village', 'ics_serial', 'registration_date',
+      'address', 'place', 'notes'];
 
-    for (const nr of normRows) {
+    const buildColVals = (nr) => {
       const { row, name, id_number } = nr;
       const colVals = { name, id_number };
-      for (const dbCol of ['phone', 'gender', 'spouse_name', 'spouse_id',
-        'num_other_persons', 'district', 'sector', 'cell', 'village', 'ics_serial',
-        'registration_date', 'address', 'place', 'notes']) {
-        if (finalCols.has(dbCol)) colVals[dbCol] = toTypedVal(getVal(row, dbCol), dbCol);
+      for (const dbCol of dbFields) {
+        if (finalCols.has(dbCol)) colVals[dbCol] = toTyped(getVal(row, dbCol), dbCol);
       }
+      // Custom columns from CSV
       for (const [key, val] of Object.entries(row)) {
         const mapped = headerMap[key];
-        const kLower = key.toLowerCase().trim();
-        if (mapped && !nameMap[kLower] && !idMap[kLower] && !fieldMap[kLower] && finalCols.has(mapped)) {
+        const kN = normH(key);
+        if (mapped && !known[kN] && finalCols.has(mapped)) {
           colVals[mapped] = String(val || '').trim() || null;
         }
       }
-      if (existingMap.has(id_number.toLowerCase())) {
-        toUpdate.push(colVals);
+      return colVals;
+    };
+
+    const toInsert = [];
+    const toUpdate = [];
+    for (const nr of uniqueRows) {
+      const cv = buildColVals(nr);
+      if (existingMap.has(nr.id_number.toLowerCase())) {
+        toUpdate.push(cv);
       } else {
-        toInsert.push(colVals);
+        toInsert.push(cv);
       }
     }
 
+    // --- Execute in a transaction ---
     const client = await pool.connect();
     let imported = 0, updated = 0, skipped = 0;
     try {
@@ -319,7 +352,10 @@ router.post('/import', async (req, res) => {
         batch.forEach((row, ri) => {
           const rp = cols.map((_, ci) => `$${ri * cols.length + ci + 1}`);
           placeholders.push(`(${rp.join(', ')})`);
-          cols.forEach((c) => values.push(row[c] == null ? null : row[c]));
+          cols.forEach((c) => {
+            const v = row[c];
+            values.push(v === undefined ? null : v);
+          });
         });
         try {
           await client.query(`INSERT INTO citizens (${colList}) VALUES ${placeholders.join(', ')}`, values);
@@ -330,30 +366,20 @@ router.post('/import', async (req, res) => {
         }
       }
 
-      // Batch UPDATE using multi-row VALUES (100 at a time)
-      for (let i = 0; i < toUpdate.length; i += 100) {
-        const batch = toUpdate.slice(i, i + 100);
-        if (batch.length === 0) continue;
-        const cols = Object.keys(batch[0]).filter((c) => c !== 'id_number');
-        if (cols.length === 0) continue;
+      // Individual UPDATE for existing rows (simple and reliable)
+      for (const row of toUpdate) {
         try {
-          const setClause = cols.map((c) => `"${c}" = v."${c}"`).join(', ');
-          const colsPerRow = cols.length + 1; // id_number + data cols
-          const valueRows = batch.map((r, ri) => {
-            const start = ri * colsPerRow + 1;
-            return '(' + Array.from({ length: colsPerRow }, (_, j) => `$${start + j}`).join(', ') + ')';
-          });
-          const flatParams = batch.flatMap((r) => [r.id_number, ...cols.map((c) => r[c] == null ? null : r[c])]);
+          const cols = Object.keys(row).filter((c) => c !== 'id_number');
+          if (cols.length === 0) continue;
+          const setClause = cols.map((c, idx) => `"${c}" = $${idx + 2}`).join(', ');
           await client.query(
-            `UPDATE citizens c SET ${setClause}
-             FROM (VALUES ${valueRows.join(', ')}) AS v(id_number, ${cols.map((c) => `"${c}"`).join(', ')})
-             WHERE LOWER(c.id_number) = LOWER(v.id_number)`,
-            flatParams
+            `UPDATE citizens SET ${setClause} WHERE LOWER(id_number) = LOWER($1)`,
+            [row.id_number, ...cols.map((c) => row[c] == null ? null : row[c])]
           );
-          updated += batch.length;
+          updated++;
         } catch (err) {
-          console.error('Batch update error:', err.message);
-          skipped += batch.length;
+          console.error('Update error:', err.message);
+          skipped++;
         }
       }
 

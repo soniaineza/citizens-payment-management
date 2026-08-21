@@ -163,22 +163,23 @@ export default function Citizens({ user }) {
     }
   };
 
+  const normH = (h) => h.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+
   const knownCitizenCols = new Set([
-    'name', 'full name', 'nom', 'nom complet', 'citizen name', 'citizen_name', 'iname',
+    'name', 'full name', 'nom', 'nom complet', 'citizen name', 'citizen name', 'iname',
     'head of hh', 'head of household', 'name of head of hh', 'name of head', 'head', 'chef', 'household',
-    'id_number', 'id number', 'id', 'id no', 'id no.', 'nid', 'nin', 'identification', 'identity',
-    'numéro d\'identité', 'n° d\'identité', 'numéro identification', 'numéro', 'identité',
+    'id number', 'id', 'id no', 'nid', 'nin', 'identification', 'identity',
     'phone', 'phone number', 'telephone', 'tel',
-    'gender', 'gender (m/f)', 'genre', 'sexe',
-    'spouse_name', 'spouse name', 'nom du conjoint', 'conjoint',
-    'spouse_id', 'spouse id', 'id conjoint', 'identité conjoint',
-    'num_other_persons', 'num other persons', 'number of other persons in hh', 'number of other persons',
+    'gender', 'gender m f', 'gender (m/f)', 'genre', 'sexe',
+    'spouse name', 'spouse_name', 'nom du conjoint', 'conjoint',
+    'spouse id', 'spouse_id', 'id conjoint', 'identite conjoint',
+    'num other persons', 'num_other_persons', 'number of other persons in hh', 'number of other persons',
     'nombre personnes', 'persons',
     'district', 'secteur', 'sector', 'cell', 'cellule', 'village',
-    'ics_serial', 'ics serial', 'icsserilnumber', 'ics_serial_number', 'serial number', 'numéro ics', 'n° ics',
-    'registration_date', 'registration date', 'date enregistrement', 'date inscription', 'date',
+    'ics serial', 'ics_serial', 'icsserilnumber', 'serial number',
+    'registration date', 'registration_date', 'date enregistrement', 'date inscription', 'date',
     'address', 'adresse', 'place', 'lieu', 'location', 'notes', 'remarques', 'observation',
-    'no', 'num', 'number', '#',
+    'no', 'num', 'number',
   ]);
 
   const nameVariants = ['name', 'full name', 'nom', 'nom complet', 'citizen name', 'citizen_name', 'iname', 'head', 'head of', 'name of head', 'head of hh', 'head of household', 'household', 'name of head of hh', 'chef'];
@@ -260,8 +261,8 @@ export default function Citizens({ user }) {
       }
     }
 
-    // Detect new columns
-    const detected = headers.map((h) => h.toLowerCase().trim()).filter((h) => h && !knownCitizenCols.has(h));
+    // Detect new columns (normalize whitespace like server does)
+    const detected = headers.map((h) => normH(h)).filter((h) => h && !knownCitizenCols.has(h));
     const uniqueNew = [...new Set(detected)];
     setNewColumns(uniqueNew);
 
