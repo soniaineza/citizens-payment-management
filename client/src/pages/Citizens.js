@@ -262,7 +262,7 @@ export default function Citizens({ user }) {
         </div>
         <div className="d-flex flex-wrap gap-2">
           {!isViewer && <button className="btn btn-primary btn-lg" onClick={openAdd}>{t('cit.add')}</button>}
-          {!isViewer && <button className="btn btn-outline-secondary btn-lg" onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); setImportPreview(null); }}>{t('cit.import')}</button>}
+          {!isViewer && <button className="btn btn-outline-secondary btn-lg" onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); setImportPreview(null); setNewColumns([]); }}>{t('cit.import')}</button>}
           <button className="btn btn-outline-secondary btn-lg" onClick={exportExcel}>⬇️ {t('cit.exportCsv')}</button>
           {selected.size > 0 && !isViewer && (
             <button className="btn btn-danger btn-lg" onClick={handleBulkDelete}>
@@ -531,7 +531,7 @@ export default function Citizens({ user }) {
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowImport(false); setImportPreview(null); }}>{t('cit.importCancel')}</button>
                 {importPreview && importPreview.rows && (
-                  <button type="button" className="btn btn-primary px-4" disabled={!importFile || importing || importPreview.rows.filter((r) => r.status === 'ok').length === 0} onClick={handleImport}>
+                  <button type="button" className="btn btn-primary px-4" disabled={!importFile || importing || importPreview.rows.length === 0} onClick={handleImport}>
                     {importing ? t('cit.importing') : t('cit.importProceed')}
                   </button>
                 )}

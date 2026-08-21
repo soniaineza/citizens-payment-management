@@ -279,7 +279,7 @@ export default function Payments({ user }) {
             </button>
           )}
           {!isViewer && (
-            <button className="btn btn-outline-secondary btn-lg" onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); setImportPreview(null); }}>
+            <button className="btn btn-outline-secondary btn-lg" onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); setImportPreview(null); setNewColumns([]); }}>
               {t('pay.import')}
             </button>
           )}
@@ -512,7 +512,7 @@ export default function Payments({ user }) {
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowImport(false); setImportPreview(null); }}>{t('pay.importCancel')}</button>
                 {importPreview && importPreview.rows && (
-                  <button type="button" className="btn btn-primary px-4" disabled={!importFile || importing || importPreview.rows.filter((r) => r.status === 'ok').length === 0} onClick={handleImport}>
+                  <button type="button" className="btn btn-primary px-4" disabled={!importFile || importing || importPreview.rows.length === 0} onClick={handleImport}>
                     {importing ? t('pay.importing') : t('pay.importProceed')}
                   </button>
                 )}
