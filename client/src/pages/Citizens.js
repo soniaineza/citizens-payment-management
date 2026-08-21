@@ -163,14 +163,17 @@ export default function Citizens({ user }) {
     }
   };
 
-  const normH = (h) => h.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  const normH = (h) => h.toLowerCase()
+    .replace(/[\s\u00A0\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g, ' ')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ').trim();
 
   const knownCitizenCols = new Set([
     'name', 'full name', 'nom', 'nom complet', 'citizen name', 'citizen name', 'iname',
     'head of hh', 'head of household', 'name of head of hh', 'name of head', 'head', 'chef', 'household',
     'id number', 'id', 'id no', 'nid', 'nin', 'identification', 'identity',
     'phone', 'phone number', 'telephone', 'tel',
-    'gender', 'gender m f', 'gender (m/f)', 'genre', 'sexe',
+    'gender', 'gender m f', 'gender (m/f)', 'gender mf', 'm f', 'm/f', 'genre', 'sexe',
     'spouse name', 'spouse_name', 'nom du conjoint', 'conjoint',
     'spouse id', 'spouse_id', 'id conjoint', 'identite conjoint',
     'num other persons', 'num_other_persons', 'number of other persons in hh', 'number of other persons',

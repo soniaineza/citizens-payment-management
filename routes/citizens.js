@@ -169,8 +169,11 @@ router.post('/import', async (req, res) => {
       return res.json({ imported: 0, updated: 0, skipped: 0, total: 0, newColumns: [] });
     }
 
-    // --- Normalize a header: lowercase, collapse whitespace, strip accents ---
-    const normH = (h) => h.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+    // --- Normalize a header: lowercase, convert ALL whitespace to spaces, strip junk ---
+    const normH = (h) => h.toLowerCase()
+      .replace(/[\s\u00A0\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g, ' ')
+      .replace(/[^a-z0-9 ]/g, '')
+      .replace(/\s+/g, ' ').trim();
 
     // --- Fuzzy header matching ---
     // Combined map: normalized header → DB column name
@@ -189,7 +192,7 @@ router.post('/import', async (req, res) => {
       'phone': 'phone', 'telephone': 'phone', 'tel': 'phone', 'phone number': 'phone',
       // gender
       'gender': 'gender', 'genre': 'gender', 'sexe': 'gender', 'gender m f': 'gender',
-      'gender (m/f)': 'gender',
+      'gender (m/f)': 'gender', 'gender mf': 'gender', 'm/f': 'gender', 'm f': 'gender',
       // spouse
       'spouse name': 'spouse_name', 'spouse_name': 'spouse_name', 'nom du conjoint': 'spouse_name',
       'spouse id': 'spouse_id', 'spouse_id': 'spouse_id',
