@@ -23,6 +23,10 @@ export default function Citizens() {
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState('');
   const [deleting, setDeleting] = useState(null);
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -104,6 +108,22 @@ export default function Citizens() {
     }
   };
 
+  const handleImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await importFile.text();
+      const { data } = await api.post('/citizens/import', { csv: text });
+      setImportResult(data);
+      load();
+    } catch (err) {
+      setImportResult({ error: apiError(err) });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div>
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -112,6 +132,7 @@ export default function Citizens() {
           <p className="text-muted mb-0">{t('cit.subtitle')}</p>
         </div>
         <button className="btn btn-primary btn-lg" onClick={openAdd}>{t('cit.add')}</button>
+        <button className="btn btn-outline-secondary btn-lg" onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); }}>{t('cit.import')}</button>
       </div>
 
       <div className="kr-card mb-3 p-3">
@@ -312,6 +333,52 @@ export default function Citizens() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">{t('cit.importTitle')}</h5>
+                <button type="button" className="btn-close" onClick={() => setShowImport(false)}></button>
+              </div>
+              <div className="modal-body">
+                <p className="text-muted small mb-3">{t('cit.importHint')}</p>
+                {importResult && !importResult.error && (
+                  <div className="alert alert-success py-2">
+                    {t('cit.importResult')
+                      .replace('{imported}', importResult.imported)
+                      .replace('{skipped}', importResult.skipped)
+                      .replace('{total}', importResult.total)}
+                  </div>
+                )}
+                {importResult && importResult.error && (
+                  <div className="alert alert-danger py-2">{importResult.error}</div>
+                )}
+                <input
+                  type="file"
+                  className="form-control"
+                  accept=".csv"
+                  onChange={(e) => setImportFile(e.target.files[0])}
+                />
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline-secondary" onClick={() => setShowImport(false)}>
+                  {t('cit.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary px-4"
+                  disabled={!importFile || importing}
+                  onClick={handleImport}
+                >
+                  {importing ? t('cit.importing') : t('cit.import')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

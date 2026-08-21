@@ -1,4 +1,6 @@
 const express = require('express');
+const csv = require('csv-parser');
+const { Readable } = require('stream');
 const { pool } = require('../db');
 const { authRequired } = require('../middleware/auth');
 
@@ -94,6 +96,73 @@ router.put('/:id', async (req, res) => {
   } catch (err) {
     console.error('Update payment error:', err.message);
     res.status(500).json({ error: 'Could not update payment.' });
+  }
+});
+
+// Import payments from CSV.
+// CSV columns: citizen_id (or id_number), amount, payment_date, place, method, notes
+router.post('/import', async (req, res) => {
+  try {
+    if (!req.body || !req.body.csv) {
+      return res.status(400).json({ error: 'Please provide CSV data.' });
+    }
+
+    const results = [];
+    const errors = [];
+    const stream = Readable.from(req.body.csv);
+
+    await new Promise((resolve, reject) => {
+      stream
+        .pipe(csv())
+        .on('data', (row) => results.push(row))
+        .on('end', resolve)
+        .on('error', reject);
+    });
+
+    let imported = 0;
+    let skipped = 0;
+
+    for (const row of results) {
+      const idNumber = (row.id_number || row['ID Number'] || row.ID || '').trim();
+      const amount = parseFloat(row.amount || row.Amount || 0);
+
+      if (!idNumber || isNaN(amount) || amount <= 0) {
+        skipped++;
+        continue;
+      }
+
+      const citizen = await pool.query(
+        'SELECT id FROM citizens WHERE LOWER(id_number) = LOWER($1)',
+        [idNumber]
+      );
+      if (citizen.rows.length === 0) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        await pool.query(
+          `INSERT INTO payments (citizen_id, amount, payment_date, place, method, notes)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            citizen.rows[0].id,
+            amount,
+            row.payment_date || row.Date || new Date().toISOString().slice(0, 10),
+            (row.place || row.Place || '').trim(),
+            (row.method || row.Method || 'Cash').trim(),
+            (row.notes || row.Notes || '').trim(),
+          ]
+        );
+        imported++;
+      } catch (err) {
+        skipped++;
+      }
+    }
+
+    res.json({ imported, skipped, total: results.length });
+  } catch (err) {
+    console.error('Import payments error:', err.message);
+    res.status(500).json({ error: 'Could not import payments.' });
   }
 });
 

@@ -20,6 +20,10 @@ export default function Payments() {
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   useEffect(() => {
     const citizen = searchParams.get('citizen');
@@ -92,6 +96,22 @@ export default function Payments() {
     }
   };
 
+  const handleImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await importFile.text();
+      const { data } = await api.post('/payments/import', { csv: text });
+      setImportResult(data);
+      load();
+    } catch (err) {
+      setImportResult({ error: apiError(err) });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div>
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -101,6 +121,9 @@ export default function Payments() {
         </div>
         <button className="btn btn-primary btn-lg" onClick={() => { setEditing(null); setForm(emptyForm); setShowForm(true); }}>
           {t('pay.record')}
+        </button>
+        <button className="btn btn-outline-secondary btn-lg" onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); }}>
+          {t('pay.import')}
         </button>
       </div>
 
@@ -244,6 +267,52 @@ export default function Payments() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">{t('pay.importTitle')}</h5>
+                <button type="button" className="btn-close" onClick={() => setShowImport(false)}></button>
+              </div>
+              <div className="modal-body">
+                <p className="text-muted small mb-3">{t('pay.importHint')}</p>
+                {importResult && !importResult.error && (
+                  <div className="alert alert-success py-2">
+                    {t('pay.importResult')
+                      .replace('{imported}', importResult.imported)
+                      .replace('{skipped}', importResult.skipped)
+                      .replace('{total}', importResult.total)}
+                  </div>
+                )}
+                {importResult && importResult.error && (
+                  <div className="alert alert-danger py-2">{importResult.error}</div>
+                )}
+                <input
+                  type="file"
+                  className="form-control"
+                  accept=".csv"
+                  onChange={(e) => setImportFile(e.target.files[0])}
+                />
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline-secondary" onClick={() => setShowImport(false)}>
+                  {t('pay.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary px-4"
+                  disabled={!importFile || importing}
+                  onClick={handleImport}
+                >
+                  {importing ? t('pay.importing') : t('pay.import')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -97,6 +97,12 @@ const translations = {
     'cit.deleteBody2': 'All of their payment records will be removed too. This cannot be undone.',
     'cit.delete': 'Delete',
     'cit.dup': 'This ID number is already registered to',
+    'cit.import': 'Import CSV',
+    'cit.importTitle': 'Import citizens from CSV',
+    'cit.importHint': 'CSV columns: name (required), id_number (required), phone, gender, place, village, district, sector, cell, address, notes',
+    'cit.importing': 'Importing…',
+    'cit.importResult': 'Import complete: {imported} added, {skipped} skipped out of {total} rows.',
+    'cit.importError': 'Could not import file. Please check the format.',
 
     'pay.title': 'Payments',
     'pay.subtitle': 'Record who paid, how much, when and where.',
@@ -139,6 +145,12 @@ const translations = {
     'pay.deleteBody3': 'This cannot be undone.',
     'pay.delete': 'Delete',
     'pay.totalLabel': 'Total:',
+    'pay.import': 'Import CSV',
+    'pay.importTitle': 'Import payments from CSV',
+    'pay.importHint': 'CSV columns: id_number (required), amount (required), payment_date, place, method, notes',
+    'pay.importing': 'Importing…',
+    'pay.importResult': 'Import complete: {imported} added, {skipped} skipped out of {total} rows.',
+    'pay.importError': 'Could not import file. Please check the format.',
 
     'rep.title': 'Reports',
     'rep.subtitle': 'Summaries and totals by date and place.',
@@ -267,6 +279,13 @@ const translations = {
     'cit.delete': 'Supprimer',
     'cit.dup': 'Ce n° d’identité est déjà enregistré pour',
 
+        'cit.import': 'Importer CSV',
+    'cit.importTitle': 'Importer des citoyens depuis un CSV',
+    'cit.importHint': 'Colonnes CSV : name (requis), id_number (requis), phone, gender, place, village, district, sector, cell, address, notes',
+    'cit.importing': 'Importation…',
+    'cit.importResult': 'Import terminé : {imported} ajoutés, {skipped} ignorés sur {total} lignes.',
+    'cit.importError': 'Impossible d’importer le fichier. Vérifiez le format.',
+
     'pay.title': 'Paiements',
     'pay.subtitle': 'Enregistrez qui a payé, combien, quand et où.',
     'pay.record': '+ Enregistrer un paiement',
@@ -307,6 +326,13 @@ const translations = {
     'pay.deleteBody2': 'le',
     'pay.deleteBody3': 'Cette action est irréversible.',
     'pay.delete': 'Supprimer',
+        'pay.import': 'Importer CSV',
+    'pay.importTitle': 'Importer des paiements depuis un CSV',
+    'pay.importHint': 'Colonnes CSV : id_number (requis), amount (requis), payment_date, place, method, notes',
+    'pay.importing': 'Importation…',
+    'pay.importResult': 'Import terminé : {imported} ajoutés, {skipped} ignorés sur {total} lignes.',
+    'pay.importError': 'Impossible d’importer le fichier. Vérifiez le format.',
+
     'pay.totalLabel': 'Total :',
 
     'rep.title': 'Rapports',
