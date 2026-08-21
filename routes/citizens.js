@@ -229,6 +229,7 @@ router.post('/import', async (req, res) => {
     const finalCols = new Set(colRows2.map((r) => r.column_name));
 
     let imported = 0;
+    let updated = 0;
     let skipped = 0;
 
     for (const row of results) {
@@ -240,76 +241,72 @@ router.post('/import', async (req, res) => {
         continue;
       }
 
-      const dup = await pool.query(
-        'SELECT id FROM citizens WHERE LOWER(id_number) = LOWER($1)',
-        [id_number]
-      );
-      if (dup.rows.length > 0) {
-        skipped++;
-        continue;
+      // Build column/value pairs
+      const colValPairs = [
+        { col: 'name', val: name },
+        { col: 'id_number', val: id_number },
+        { col: 'phone', val: (row.phone || row.Phone || '').trim() },
+        { col: 'gender', val: (row.gender || row.Gender || '').trim() },
+        { col: 'spouse_name', val: (row.spouse_name || row['Spouse Name'] || '').trim() },
+        { col: 'spouse_id', val: (row.spouse_id || row['Spouse ID'] || '').trim() },
+        { col: 'num_other_persons', val: row.num_other_persons || row['Num Other Persons'] || null },
+        { col: 'district', val: (row.district || row.District || '').trim() },
+        { col: 'sector', val: (row.sector || row.Sector || '').trim() },
+        { col: 'cell', val: (row.cell || row.Cell || '').trim() },
+        { col: 'village', val: (row.village || row.Village || '').trim() },
+        { col: 'ics_serial', val: (row.ics_serial || row['ICS Serial'] || '').trim() },
+        { col: 'registration_date', val: row.registration_date || row['Registration Date'] || null },
+        { col: 'address', val: (row.address || row.Address || '').trim() },
+        { col: 'place', val: (row.place || row.Place || '').trim() },
+        { col: 'notes', val: (row.notes || row.Notes || '').trim() },
+      ];
+
+      // Add any custom/dynamic columns
+      for (const header of Object.keys(row)) {
+        const normalized = header.toLowerCase().trim();
+        const mapped = headerMap[header];
+        if (mapped && !knownColumns[normalized] && finalCols.has(mapped)) {
+          colValPairs.push({ col: `"${mapped}"`, val: row[header] || '' });
+        }
       }
 
+      // Filter to only columns that exist
+      const validPairs = colValPairs.filter((p) => {
+        const bare = p.col.replace(/"/g, '');
+        return finalCols.has(bare) || p.col.includes('"');
+      });
+
       try {
-        // Build dynamic columns and values
-        const cols = [];
-        const vals = [];
-        let paramIdx = 1;
-
-        // Always include name and id_number
-        cols.push('name', 'id_number');
-        vals.push(name, id_number);
-        paramIdx += 2;
-
-        // Map known columns
-        const knownMapping = {
-          phone: row.phone || row.Phone || '',
-          gender: row.gender || row.Gender || '',
-          spouse_name: row.spouse_name || row['Spouse Name'] || '',
-          spouse_id: row.spouse_id || row['Spouse ID'] || '',
-          num_other_persons: row.num_other_persons || row['Num Other Persons'] || null,
-          district: row.district || row.District || '',
-          sector: row.sector || row.Sector || '',
-          cell: row.cell || row.Cell || '',
-          village: row.village || row.Village || '',
-          ics_serial: row.ics_serial || row['ICS Serial'] || '',
-          registration_date: row.registration_date || row['Registration Date'] || null,
-          address: row.address || row.Address || '',
-          place: row.place || row.Place || '',
-          notes: row.notes || row.Notes || '',
-        };
-
-        for (const [key, val] of Object.entries(knownMapping)) {
-          if (finalCols.has(key)) {
-            cols.push(key);
-            vals.push(typeof val === 'string' ? val.trim() : val);
-            paramIdx++;
-          }
-        }
-
-        // Add any custom/dynamic columns from the CSV
-        for (const header of Object.keys(row)) {
-          const normalized = header.toLowerCase().trim();
-          const mapped = headerMap[header];
-          if (mapped && !knownColumns[normalized] && finalCols.has(mapped)) {
-            cols.push(`"${mapped}"`);
-            vals.push(row[header] || '');
-            paramIdx++;
-          }
-        }
-
+        const cols = validPairs.map((p) => `"${p.col.replace(/"/g, '')}"`);
+        const vals = validPairs.map((p) => typeof p.val === 'string' ? p.val.trim() : p.val);
         const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
-        await pool.query(
-          `INSERT INTO citizens (${cols.map((c) => c.includes('"') ? c : `"${c}"`).join(', ')}) VALUES (${placeholders})`,
-          vals
+        const updateSet = cols.slice(2).map((c, i) => `${c} = $${i + 3}`).join(', ');
+
+        const existing = await pool.query(
+          'SELECT id FROM citizens WHERE LOWER(id_number) = LOWER($1)',
+          [id_number]
         );
-        imported++;
+
+        if (existing.rows.length > 0) {
+          await pool.query(
+            `UPDATE citizens SET ${updateSet} WHERE LOWER(id_number) = LOWER($1)`,
+            [id_number, ...vals.slice(2)]
+          );
+          updated++;
+        } else {
+          await pool.query(
+            `INSERT INTO citizens (${cols.join(', ')}) VALUES (${placeholders})`,
+            vals
+          );
+          imported++;
+        }
       } catch (err) {
         console.error('Import row error:', err.message);
         skipped++;
       }
     }
 
-    res.json({ imported, skipped, total: results.length, newColumns });
+    res.json({ imported, updated, skipped, total: results.length, newColumns });
   } catch (err) {
     console.error('Import citizens error:', err.message);
     res.status(500).json({ error: 'Could not import citizens.' });

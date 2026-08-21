@@ -212,8 +212,8 @@ export default function Citizens({ user }) {
     const existingIds = new Set(citizens.map((c) => c.id_number.toLowerCase()));
     const preview = rows.map((r) => {
       const isEmpty = !r.name || !r.idNumber;
-      const isDuplicate = !isEmpty && existingIds.has(r.idNumber.toLowerCase());
-      return { ...r, status: isEmpty ? 'empty' : isDuplicate ? 'duplicate' : 'ok' };
+      const isExisting = !isEmpty && existingIds.has(r.idNumber.toLowerCase());
+      return { ...r, status: isEmpty ? 'empty' : isExisting ? 'update' : 'ok' };
     });
     setImportPreview({ rows: preview });
   };
@@ -477,7 +477,7 @@ export default function Citizens({ user }) {
                 <p className="text-muted small mb-3">{t('cit.importHint')}</p>
                 {importResult && !importResult.error && (
                   <div className="alert alert-success py-2">
-                    {t('cit.importResult').replace('{imported}', importResult.imported).replace('{skipped}', importResult.skipped).replace('{total}', importResult.total)}
+                    {t('cit.importResult2').replace('{imported}', importResult.imported).replace('{updated}', importResult.updated || 0).replace('{skipped}', importResult.skipped).replace('{total}', importResult.total)}
                     {importResult.newColumns && importResult.newColumns.length > 0 && (
                       <div className="mt-1 small">
                         New columns created: <strong>{importResult.newColumns.join(', ')}</strong>
@@ -500,7 +500,8 @@ export default function Citizens({ user }) {
                   <div className="mb-3">
                     <div className="d-flex gap-3 mb-2">
                       <span className="badge badge-paid">{t('cit.importRowsOk').replace('{count}', importPreview.rows.filter((r) => r.status === 'ok').length)}</span>
-                      <span className="badge badge-unpaid">{t('cit.importRowsSkip').replace('{count}', importPreview.rows.filter((r) => r.status !== 'ok').length)}</span>
+                      <span className="badge" style={{ background: 'var(--tint-amber)', color: 'var(--tint-amber-fg)' }}>{t('cit.importRowsUpdate').replace('{count}', importPreview.rows.filter((r) => r.status === 'update').length)}</span>
+                      <span className="badge badge-unpaid">{t('cit.importRowsSkip').replace('{count}', importPreview.rows.filter((r) => r.status === 'empty').length)}</span>
                     </div>
                     <div className="table-responsive" style={{ maxHeight: 300 }}>
                       <table className="table table-sm mb-0">
@@ -515,7 +516,7 @@ export default function Citizens({ user }) {
                               <td>{r.idNumber}</td>
                               <td>
                                 {r.status === 'ok' && <span className="badge badge-paid">{t('cit.paid')}</span>}
-                                {r.status === 'duplicate' && <span className="badge badge-unpaid">{t('cit.dup').split(' ')[0]}</span>}
+                                {r.status === 'update' && <span className="badge" style={{ background: 'var(--tint-amber)', color: 'var(--tint-amber-fg)' }}>{t('cit.importUpdate')}</span>}
                                 {r.status === 'empty' && <span className="badge bg-secondary">Empty</span>}
                               </td>
                             </tr>
