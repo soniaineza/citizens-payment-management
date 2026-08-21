@@ -15,17 +15,6 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
     }
 
-    const { rows: existing } = await pool.query('SELECT id FROM users LIMIT 1');
-    if (existing.length > 0) {
-      // Only allow a signed-in admin to create extra accounts.
-      const header = req.headers.authorization || '';
-      const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-      if (!token) return res.status(403).json({ error: 'An account already exists. Please sign in first.' });
-      const jwt = require('jsonwebtoken');
-      const payload = jwt.verify(token, process.env.JWT_SECRET || 'change-me-in-production');
-      if (payload.role !== 'admin') return res.status(403).json({ error: 'Only an admin can create new accounts.' });
-    }
-
     const passwordHash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(
       `INSERT INTO users (name, email, password_hash, role)

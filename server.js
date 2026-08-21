@@ -25,16 +25,6 @@ app.use('/api', async (req, res, next) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// TEMPORARY: reset all users – remove after first login
-app.get('/api/reset-users', async (req, res) => {
-  try {
-    const { rowCount } = await pool.query('DELETE FROM users');
-    res.json({ deleted: rowCount });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/citizens', require('./routes/citizens'));
 app.use('/api/payments', require('./routes/payments'));
