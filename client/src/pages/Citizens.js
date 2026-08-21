@@ -232,9 +232,11 @@ export default function Citizens({ user }) {
         const wb = XLSX.read(data);
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(sheet);
-        const lines = ['name,id_number,phone,gender,place,village,district,sector,cell,address,notes'];
+        if (json.length === 0) { setImportResult({ error: 'Excel file is empty.' }); return; }
+        const allKeys = Object.keys(json[0]);
+        const lines = [allKeys.join(',')];
         json.forEach((r) => {
-          const row = [r.name || '', r.id_number || r['ID Number'] || r.ID || '', r.phone || '', r.gender || '', r.place || '', r.village || '', r.district || '', r.sector || '', r.cell || '', r.address || '', r.notes || ''].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+          const row = allKeys.map((k) => `"${String(r[k] || '').replace(/"/g, '""')}"`).join(',');
           lines.push(row);
         });
         csvText = lines.join('\n');

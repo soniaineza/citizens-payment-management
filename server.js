@@ -7,7 +7,7 @@ const { pool, init } = require('./db');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Ensure the database schema is ready before handling API requests.
 // Needed on serverless (Vercel) where init() is not called on boot.

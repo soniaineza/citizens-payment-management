@@ -205,9 +205,11 @@ export default function Payments({ user }) {
         const wb = XLSX.read(data);
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(sheet);
-        const lines = ['id_number,amount,payment_date,place,method,notes'];
+        if (json.length === 0) { setImportResult({ error: 'Excel file is empty.' }); return; }
+        const allKeys = Object.keys(json[0]);
+        const lines = [allKeys.join(',')];
         json.forEach((r) => {
-          const row = [r.id_number || r['ID Number'] || r.ID || '', r.amount || '', r.payment_date || r.Date || '', r.place || '', r.method || '', r.notes || ''].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+          const row = allKeys.map((k) => `"${String(r[k] || '').replace(/"/g, '""')}"`).join(',');
           lines.push(row);
         });
         csvText = lines.join('\n');
