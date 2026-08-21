@@ -171,6 +171,14 @@ export default function Citizens({ user }) {
     'registration_date', 'registration date', 'address', 'place', 'notes',
   ]);
 
+  const nameVariants = ['name', 'full name', 'nom', 'nom complet', 'citizen name', 'citizen_name', 'iname'];
+  const idVariants = ['id_number', 'id number', 'id', 'numéro d\'identité', 'n° d\'identité', 'numéro identification', 'nid', 'nin', 'identification', 'identity', 'citizen_id', 'citizen id', 'num_citizen', 'num citizen'];
+
+  const fuzzyMatchCol = (header, variants) => {
+    const h = header.toLowerCase().replace(/[^a-z0-9àâçéèêëîïôùûüÿæœ\s]/g, '').trim();
+    return variants.some((v) => h === v || h.includes(v));
+  };
+
   const handleFileSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -180,14 +188,19 @@ export default function Citizens({ user }) {
     const ext = file.name.split('.').pop().toLowerCase();
     let rows = [];
     let headers = [];
+    let nameIdx = -1;
+    let idIdx = -1;
     if (ext === 'csv') {
       const text = await file.text();
       const lines = text.split('\n').filter((l) => l.trim());
       if (lines.length < 2) { setImportPreview({ rows: [], error: 'File has no data rows.' }); return; }
       headers = lines[0].split(',').map((h) => h.trim());
-      const nameIdx = headers.findIndex((h) => h.toLowerCase() === 'name');
-      const idIdx = headers.findIndex((h) => h.toLowerCase() === 'id_number' || h.toLowerCase() === 'id number' || h.toLowerCase() === 'id');
-      if (nameIdx === -1 || idIdx === -1) { setImportPreview({ rows: [], error: 'CSV must have "name" and "id_number" columns.' }); return; }
+      nameIdx = headers.findIndex((h) => fuzzyMatchCol(h, nameVariants));
+      idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
+      if (nameIdx === -1 || idIdx === -1) {
+        setImportPreview({ rows: [], error: `Could not find name/ID columns. Found: ${headers.join(', ')}. Please use "name" and "id_number" as column headers.` });
+        return;
+      }
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',').map((c) => c.trim());
         rows.push({ line: i + 1, name: cols[nameIdx] || '', idNumber: cols[idIdx] || '' });
@@ -197,10 +210,19 @@ export default function Citizens({ user }) {
       const wb = XLSX.read(data);
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(sheet);
-      if (json.length > 0) headers = Object.keys(json[0]);
+      if (json.length === 0) { setImportPreview({ rows: [], error: 'Excel file is empty.' }); return; }
+      headers = Object.keys(json[0]);
+      nameIdx = headers.findIndex((h) => fuzzyMatchCol(h, nameVariants));
+      idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
+      if (nameIdx === -1 || idIdx === -1) {
+        setImportPreview({ rows: [], error: `Could not find name/ID columns. Found: ${headers.join(', ')}. Please use "name" and "id_number" as column headers.` });
+        return;
+      }
       for (let i = 0; i < json.length; i++) {
         const r = json[i];
-        rows.push({ line: i + 2, name: r.name || r.Name || '', idNumber: r.id_number || r['ID Number'] || r.ID || '' });
+        const nameVal = json[i][headers[nameIdx]] || '';
+        const idVal = json[i][headers[idIdx]] || '';
+        rows.push({ line: i + 2, name: String(nameVal).trim(), idNumber: String(idVal).trim() });
       }
     }
 
@@ -234,6 +256,10 @@ export default function Citizens({ user }) {
         const json = XLSX.utils.sheet_to_json(sheet);
         if (json.length === 0) { setImportResult({ error: 'Excel file is empty.' }); return; }
         const allKeys = Object.keys(json[0]);
+        const nIdx = allKeys.findIndex((h) => fuzzyMatchCol(h, nameVariants));
+        const iIdx = allKeys.findIndex((h) => fuzzyMatchCol(h, idVariants));
+        const nameHeader = nIdx > -1 ? allKeys[nIdx] : 'name';
+        const idHeader = iIdx > -1 ? allKeys[iIdx] : 'id_number';
         const lines = [allKeys.join(',')];
         json.forEach((r) => {
           const row = allKeys.map((k) => `"${String(r[k] || '').replace(/"/g, '""')}"`).join(',');

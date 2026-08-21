@@ -177,14 +177,33 @@ router.post('/import', async (req, res) => {
 
     // Known columns that we handle with specific mapping
     const knownColumns = {
-      name: 'name', id_number: 'id_number', 'id number': 'id_number', id: 'id_number',
-      phone: 'phone', gender: 'gender', spouse_name: 'spouse_name', 'spouse name': 'spouse_name',
+      name: 'name', 'full name': 'name', 'nom': 'name', 'nom complet': 'name',
+      'citizen name': 'name', 'citizen_name': 'name', 'iname': 'name',
+      id_number: 'id_number', 'id number': 'id_number', id: 'id_number',
+      'numéro d\'identité': 'id_number', 'n° d\'identité': 'id_number',
+      'numéro identification': 'id_number', nid: 'id_number', nin: 'id_number',
+      identification: 'id_number', identity: 'id_number',
+      'citizen_id': 'id_number', 'citizen id': 'id_number',
+      'num_citizen': 'id_number', 'num citizen': 'id_number',
+      phone: 'phone', telephone: 'phone', tel: 'phone',
+      gender: 'gender', genre: 'gender', sexe: 'gender',
+      spouse_name: 'spouse_name', 'spouse name': 'spouse_name',
+      'nom du conjoint': 'spouse_name', 'conjoint': 'spouse_name',
       spouse_id: 'spouse_id', 'spouse id': 'spouse_id',
+      'id conjoint': 'spouse_id', 'identité conjoint': 'spouse_id',
       num_other_persons: 'num_other_persons', 'num other persons': 'num_other_persons',
-      district: 'district', sector: 'sector', cell: 'cell', village: 'village',
+      'nombre personnes': 'num_other_persons', 'persons': 'num_other_persons',
+      district: 'district', secteur: 'district',
+      sector: 'sector',
+      cell: 'cell', cellule: 'cell',
+      village: 'village',
       ics_serial: 'ics_serial', 'ics serial': 'ics_serial',
+      'numéro ics': 'ics_serial', 'n° ics': 'ics_serial',
       registration_date: 'registration_date', 'registration date': 'registration_date',
-      address: 'address', place: 'place', notes: 'notes',
+      'date enregistrement': 'registration_date', 'date inscription': 'registration_date',
+      address: 'address', adresse: 'address',
+      place: 'place', lieu: 'place', location: 'place',
+      notes: 'notes', remarques: 'notes', observation: 'notes',
     };
 
     // Get all unique header keys from all rows
@@ -233,32 +252,56 @@ router.post('/import', async (req, res) => {
     let skipped = 0;
 
     for (const row of results) {
-      const name = (row.name || row.Name || '').trim();
-      const id_number = (row.id_number || row['ID Number'] || row.ID || '').trim();
+      // Find name from any variant header
+      let name = '';
+      let id_number = '';
+      for (const [key, val] of Object.entries(row)) {
+        const normalized = key.toLowerCase().trim().replace(/[^a-z0-9àâçéèêëîïôùûüÿæœ\s]/g, '');
+        const mapped = headerMap[key] || '';
+        if (mapped === 'name' && !name) name = String(val || '').trim();
+        if (mapped === 'id_number' && !id_number) id_number = String(val || '').trim();
+      }
+      // Fallback: try common header names directly
+      if (!name) name = (row.name || row.Name || row.full_name || row['Full Name'] || row.nom || row['Nom complet'] || '').trim();
+      if (!id_number) id_number = (row.id_number || row['ID Number'] || row.ID || row.id || row.nid || row.nin || row.NID || row.NIN || '').trim();
 
       if (!name || !id_number) {
         skipped++;
         continue;
       }
 
-      // Build column/value pairs
+      // Build column/value pairs using headerMap
+      const getField = (row, ...keys) => {
+        for (const [key, val] of Object.entries(row)) {
+          const mapped = headerMap[key] || '';
+          if (keys.includes(mapped)) return String(val || '').trim();
+        }
+        return '';
+      };
+      const getFieldRaw = (row, ...rawKeys) => {
+        for (const k of rawKeys) {
+          if (row[k]) return String(row[k]).trim();
+        }
+        return '';
+      };
+
       const colValPairs = [
         { col: 'name', val: name },
         { col: 'id_number', val: id_number },
-        { col: 'phone', val: (row.phone || row.Phone || '').trim() },
-        { col: 'gender', val: (row.gender || row.Gender || '').trim() },
-        { col: 'spouse_name', val: (row.spouse_name || row['Spouse Name'] || '').trim() },
-        { col: 'spouse_id', val: (row.spouse_id || row['Spouse ID'] || '').trim() },
-        { col: 'num_other_persons', val: row.num_other_persons || row['Num Other Persons'] || null },
-        { col: 'district', val: (row.district || row.District || '').trim() },
-        { col: 'sector', val: (row.sector || row.Sector || '').trim() },
-        { col: 'cell', val: (row.cell || row.Cell || '').trim() },
-        { col: 'village', val: (row.village || row.Village || '').trim() },
-        { col: 'ics_serial', val: (row.ics_serial || row['ICS Serial'] || '').trim() },
-        { col: 'registration_date', val: row.registration_date || row['Registration Date'] || null },
-        { col: 'address', val: (row.address || row.Address || '').trim() },
-        { col: 'place', val: (row.place || row.Place || '').trim() },
-        { col: 'notes', val: (row.notes || row.Notes || '').trim() },
+        { col: 'phone', val: getField(row, 'phone') || getFieldRaw(row, 'phone', 'Phone', 'téléphone', 'Téléphone', 'tel', 'Tel') },
+        { col: 'gender', val: getField(row, 'gender') || getFieldRaw(row, 'gender', 'Gender', 'genre', 'Genre', 'sexe', 'Sexe') },
+        { col: 'spouse_name', val: getField(row, 'spouse_name') || getFieldRaw(row, 'spouse_name', 'Spouse Name', 'Spouse name', 'nom du conjoint', 'conjoint') },
+        { col: 'spouse_id', val: getField(row, 'spouse_id') || getFieldRaw(row, 'spouse_id', 'Spouse ID', 'Spouse id', 'id conjoint', 'identité conjoint') },
+        { col: 'num_other_persons', val: getField(row, 'num_other_persons') || getFieldRaw(row, 'num_other_persons', 'Num Other Persons', 'nombre personnes', 'persons') || null },
+        { col: 'district', val: getField(row, 'district') || getFieldRaw(row, 'district', 'District', 'secteur') },
+        { col: 'sector', val: getField(row, 'sector') || getFieldRaw(row, 'sector', 'Sector', 'Secteur') },
+        { col: 'cell', val: getField(row, 'cell') || getFieldRaw(row, 'cell', 'Cell', 'Cellule') },
+        { col: 'village', val: getField(row, 'village') || getFieldRaw(row, 'village', 'Village') },
+        { col: 'ics_serial', val: getField(row, 'ics_serial') || getFieldRaw(row, 'ics_serial', 'ICS Serial', 'ics serial', 'numéro ics', 'n° ics') },
+        { col: 'registration_date', val: getField(row, 'registration_date') || getFieldRaw(row, 'registration_date', 'Registration Date', 'date enregistrement', 'date inscription') || null },
+        { col: 'address', val: getField(row, 'address') || getFieldRaw(row, 'address', 'Address', 'Adresse') },
+        { col: 'place', val: getField(row, 'place') || getFieldRaw(row, 'place', 'Place', 'Lieu', 'Location') },
+        { col: 'notes', val: getField(row, 'notes') || getFieldRaw(row, 'notes', 'Notes', 'Remarques', 'Observation') },
       ];
 
       // Add any custom/dynamic columns

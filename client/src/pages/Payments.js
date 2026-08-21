@@ -127,6 +127,14 @@ export default function Payments({ user }) {
     'amount', 'payment_date', 'date', 'place', 'method', 'notes',
   ]);
 
+  const idVariants = ['id_number', 'id number', 'id', 'numéro d\'identité', 'n° d\'identité', 'nid', 'nin', 'identification', 'identity', 'citizen_id', 'citizen id'];
+  const amtVariants = ['amount', 'montant', 'sum', 'total'];
+
+  const fuzzyMatchCol = (header, variants) => {
+    const h = header.toLowerCase().replace(/[^a-z0-9àâçéèêëîïôùûüÿæœ\s]/g, '').trim();
+    return variants.some((v) => h === v || h.includes(v));
+  };
+
   const handleFileSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -136,18 +144,23 @@ export default function Payments({ user }) {
     const ext = file.name.split('.').pop().toLowerCase();
     let rows = [];
     let headers = [];
+    let idIdx = -1;
+    let amtIdx = -1;
     if (ext === 'csv') {
       const text = await file.text();
       const lines = text.split('\n').filter((l) => l.trim());
       if (lines.length < 2) { setImportPreview({ rows: [], error: 'File has no data rows.' }); return; }
       headers = lines[0].split(',').map((h) => h.trim());
-      const idIdx = headers.findIndex((h) => h.toLowerCase() === 'id_number' || h.toLowerCase() === 'id number' || h.toLowerCase() === 'id');
-      const amtIdx = headers.findIndex((h) => h.toLowerCase() === 'amount');
-      if (idIdx === -1 || amtIdx === -1) { setImportPreview({ rows: [], error: 'CSV must have "id_number" and "amount" columns.' }); return; }
-      const dateIdx = headers.findIndex((h) => h.toLowerCase() === 'payment_date' || h.toLowerCase() === 'date');
-      const placeIdx = headers.findIndex((h) => h.toLowerCase() === 'place');
-      const methodIdx = headers.findIndex((h) => h.toLowerCase() === 'method');
-      const notesIdx = headers.findIndex((h) => h.toLowerCase() === 'notes');
+      idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
+      amtIdx = headers.findIndex((h) => fuzzyMatchCol(h, amtVariants));
+      if (idIdx === -1 || amtIdx === -1) {
+        setImportPreview({ rows: [], error: `Could not find ID/amount columns. Found: ${headers.join(', ')}. Please use "id_number" and "amount" as column headers.` });
+        return;
+      }
+      const dateIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['payment_date', 'date', 'date paiement', 'date de paiement', 'pay_date']));
+      const placeIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['place', 'lieu', 'location']));
+      const methodIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['method', 'méthode', 'mode']));
+      const notesIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['notes', 'remarques', 'observation']));
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',').map((c) => c.trim());
         rows.push({
@@ -163,13 +176,28 @@ export default function Payments({ user }) {
       const wb = XLSX.read(data);
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(sheet);
-      if (json.length > 0) headers = Object.keys(json[0]);
+      if (json.length === 0) { setImportPreview({ rows: [], error: 'Excel file is empty.' }); return; }
+      headers = Object.keys(json[0]);
+      idIdx = headers.findIndex((h) => fuzzyMatchCol(h, idVariants));
+      amtIdx = headers.findIndex((h) => fuzzyMatchCol(h, amtVariants));
+      if (idIdx === -1 || amtIdx === -1) {
+        setImportPreview({ rows: [], error: `Could not find ID/amount columns. Found: ${headers.join(', ')}. Please use "id_number" and "amount" as column headers.` });
+        return;
+      }
+      const dateIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['payment_date', 'date', 'date paiement', 'date de paiement']));
+      const placeIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['place', 'lieu', 'location']));
+      const methodIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['method', 'méthode', 'mode']));
+      const notesIdx = headers.findIndex((h) => fuzzyMatchCol(h, ['notes', 'remarques', 'observation']));
       for (let i = 0; i < json.length; i++) {
         const r = json[i];
         rows.push({
-          line: i + 2, idNumber: r.id_number || r['ID Number'] || r.ID || '', amount: r.amount || '',
-          payment_date: r.payment_date || r.Date || '', place: r.place || '',
-          method: r.method || '', notes: r.notes || '',
+          line: i + 2,
+          idNumber: idIdx > -1 ? String(r[headers[idIdx]] || '').trim() : '',
+          amount: amtIdx > -1 ? String(r[headers[amtIdx]] || '').trim() : '',
+          payment_date: dateIdx > -1 ? String(r[headers[dateIdx]] || '').trim() : '',
+          place: placeIdx > -1 ? String(r[headers[placeIdx]] || '').trim() : '',
+          method: methodIdx > -1 ? String(r[headers[methodIdx]] || '').trim() : '',
+          notes: notesIdx > -1 ? String(r[headers[notesIdx]] || '').trim() : '',
         });
       }
     }

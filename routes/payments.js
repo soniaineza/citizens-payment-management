@@ -124,8 +124,15 @@ router.post('/import', async (req, res) => {
     const knownColumns = {
       citizen_id: 'citizen_id', 'citizen id': 'citizen_id',
       id_number: 'citizen_id_ref', 'id number': 'citizen_id_ref', id: 'citizen_id_ref',
-      amount: 'amount', payment_date: 'payment_date', date: 'payment_date',
-      place: 'place', method: 'method', notes: 'notes',
+      'numéro d\'identité': 'citizen_id_ref', 'n° d\'identité': 'citizen_id_ref',
+      'nid': 'citizen_id_ref', 'nin': 'citizen_id_ref', 'identification': 'citizen_id_ref',
+      'identity': 'citizen_id_ref', 'citizen_id': 'citizen_id_ref',
+      amount: 'amount', montant: 'amount', sum: 'amount',
+      payment_date: 'payment_date', date: 'payment_date', 'date paiement': 'payment_date',
+      'date de paiement': 'payment_date', 'pay_date': 'payment_date',
+      place: 'place', lieu: 'place', location: 'place',
+      method: 'method', méthode: 'method', mode: 'method',
+      notes: 'notes', remarques: 'notes', observation: 'notes',
     };
 
     const allHeaders = new Set();
@@ -167,8 +174,17 @@ router.post('/import', async (req, res) => {
     let skipped = 0;
 
     for (const row of results) {
-      const idNumber = (row.id_number || row['ID Number'] || row.ID || '').trim();
-      const amount = parseFloat(row.amount || row.Amount || 0);
+      // Find id_number and amount from any variant header
+      let idNumber = '';
+      let amount = 0;
+      for (const [key, val] of Object.entries(row)) {
+        const mapped = headerMap[key] || '';
+        if (mapped === 'citizen_id_ref' && !idNumber) idNumber = String(val || '').trim();
+        if (mapped === 'amount' && !amount) amount = parseFloat(val || 0);
+      }
+      // Fallback: try common header names directly
+      if (!idNumber) idNumber = (row.id_number || row['ID Number'] || row.ID || row.id || row.nid || row.nin || row.NID || row.NIN || '').trim();
+      if (!amount) amount = parseFloat(row.amount || row.Amount || row.montant || row.Montant || 0);
 
       if (!idNumber || isNaN(amount) || amount <= 0) {
         skipped++;
